@@ -131,7 +131,7 @@ graph TD
     L -- All Done? --> M(7: Emit PlaybookEnd Event);
     M --> N(8: Report Final Status & Exit);
 
-    subgraph gxo Task Execution Loop                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  
+    subgraph gxo Task Execution Loop
         H; I; J; K; L;
     end
 
