@@ -1,0 +1,239 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GXO Playbook Schema",
+  "description": "Schema for GXO (Go Execution and Orchestration) Playbook YAML files (v1.0.0)",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "description": "The version of the GXO playbook schema this file adheres to. Must be compatible with engine version constraint (e.g., ^1.0.0).",
+      "type": "string",
+      "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "name": {
+      "description": "Identifier for the playbook.",
+      "type": "string",
+      "minLength": 1
+    },
+    "vars": {
+      "description": "Playbook-level variables. Values are native types after YAML parsing. String values are subject to templating.",
+      "type": "object",
+      "additionalProperties": true
+    },
+    "tasks": {
+      "description": "List of tasks to be executed.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/Task"
+      }
+    },
+    "task_policy": {
+      "$ref": "#/definitions/TaskPolicy"
+    },
+    "channel_policy": {
+      "$ref": "#/definitions/ChannelPolicy"
+    },
+    "state_policy": {
+      "description": "Defines the global default policy for how tasks interact with the state store. Can be overridden per-task.",
+      "$ref": "#/definitions/StatePolicy"
+    }
+  },
+  "required": [
+    "name",
+    "schemaVersion",
+    "tasks"
+  ],
+  "additionalProperties": false,
+  "definitions": {
+    "Task": {
+      "description": "A single unit of work within a playbook.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "User-friendly name for the task. Used for logging, status reporting, and referencing in dependencies. Required if 'register' is used or if referenced by stream_inputs/status check.",
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$"
+        },
+        "type": {
+          "description": "Corresponds to a registered plugin module name (e.g., \"exec\").",
+          "type": "string",
+          "minLength": 1
+        },
+        "params": {
+          "description": "Module-specific parameters. String values are subject to templating.",
+          "type": "object",
+          "additionalProperties": true
+        },
+        "register": {
+          "description": "Stores the module's summary result in the state under this key. Key must be a valid identifier.",
+          "type": "string",
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+        },
+        "stream_inputs": {
+          "description": "Specifies the 'name' of upstream tasks to receive streaming data from. Must be a valid task name.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]+$"
+          }
+        },
+        "ignore_errors": {
+          "description": "If true, fatal errors from this task log an error and set status to Failed, but allow the playbook to continue. Dependents still won't run.",
+          "type": "boolean",
+          "default": false
+        },
+        "when": {
+          "description": "A Go text/template string evaluated against state. If false or error, task is skipped.",
+          "type": "string"
+        },
+        "loop": {
+          "description": "A literal list/slice or a Go text/template string resolving to one. Engine iterates task execution.",
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "loop_control": {
+          "$ref": "#/definitions/LoopControlConfig"
+        },
+        "retry": {
+          "$ref": "#/definitions/RetryConfig"
+        },
+        "timeout": {
+          "description": "Execution timeout override for this task. Go duration string (e.g., \"30s\", \"1m\"). Overrides engine default.",
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+        },
+        "policy_ref": {
+          "description": "Reference to a named task policy (future feature).",
+          "type": "string"
+        },
+        "policy": {
+          "$ref": "#/definitions/TaskPolicy"
+        },
+        "state_policy": {
+          "description": "Task-specific state access policy, overriding the global policy.",
+          "$ref": "#/definitions/StatePolicy"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "LoopControlConfig": {
+      "description": "Configures the behavior of loop execution.",
+      "type": "object",
+      "properties": {
+        "parallel": {
+          "description": "Maximum number of loop iterations to run concurrently. Defaults to 1 (sequential).",
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        },
+        "loop_var": {
+          "description": "Name of the loop item variable in task template scope. Defaults to 'item'. Must be a valid identifier.",
+          "type": "string",
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "default": "item"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RetryConfig": {
+      "description": "Defines the retry policy for the task on fatal errors.",
+      "type": "object",
+      "properties": {
+        "attempts": {
+          "description": "Maximum number of times to execute the task (total attempts). Defaults to 1 (no retries). Must be >= 1.",
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        },
+        "delay": {
+          "description": "Initial duration string to wait between retry attempts (e.g., \"1s\", \"500ms\"). Defaults to \"1s\".",
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "default": "1s"
+        },
+        "max_delay": {
+          "description": "Maximum duration string for delay, capping exponential backoff (e.g., \"30s\"). Optional.",
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+        },
+        "backoff_factor": {
+          "description": "Multiplier for the delay between retries (e.g., 2.0 for exponential backoff). Must be >= 1.0. Defaults to 1.0 (no backoff).",
+          "type": "number",
+          "minimum": 1.0,
+          "default": 1.0
+        },
+        "jitter": {
+          "description": "Factor (0.0 to 1.0) to randomize delay duration (e.g., 0.1 for +/- 10% jitter). Defaults to 0.0 (no jitter).",
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.0
+        },
+        "on_error": {
+          "description": "Retry only if the Perform method returns a non-nil error. Defaults to true.",
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "TaskPolicy": {
+      "description": "Defines generic policies applicable to task execution.",
+      "type": "object",
+      "properties": {
+        "skip_on_no_input": {
+          "description": "If true, skip this task if all its input stream channels close immediately without any records.",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "ChannelPolicy": {
+      "description": "Defines policies for data channels used for streaming.",
+      "type": "object",
+      "properties": {
+        "buffer_size": {
+          "description": "Channel buffer size override. A size of 0 creates an unbuffered channel.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "overflow_strategy": {
+          "description": "Behavior when writing to a full buffered channel.",
+          "type": "string",
+          "enum": [
+            "block",
+            "drop_new",
+            "drop_oldest",
+            "error"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "StatePolicy": {
+      "description": "Defines policies for how tasks interact with the state store.",
+      "type": "object",
+      "properties": {
+        "access_mode": {
+          "description": "Controls the method used for reading from the state store. 'deep_copy' is safe but slower. 'unsafe_direct_reference' is fast but risky.",
+          "type": "string",
+          "enum": [
+            "deep_copy",
+            "unsafe_direct_reference"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

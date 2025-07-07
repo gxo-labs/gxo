@@ -1,0 +1,32 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+gxo  # Your main binary
+*.test
+
+# Go build cache
+/vendor/
+*.o
+*.a
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, created with `go test -coverprofile`
+*.out
+
+# Editor directories and files
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+
+# GoLand
+.idea_modules/
+
+# Environment configuration
+.env
