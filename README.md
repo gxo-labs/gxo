@@ -33,7 +33,7 @@ This fragmentation leads to critical architectural gaps:
 
 ## The GXO Vision: An Automation Kernel
 
-GXO is architected as an **Automation Kernel**. Like an OS kernel, it provides a minimal, performant set of core services upon which all automation is built. It schedules and manages the execution of **`Workloads`**.
+GXO, Go Execution and Orchestration, is architected as an **Automation Kernel**. Like an OS kernel, it provides a minimal, performant set of core services upon which all automation is built. It schedules and manages the execution of **`Workloads`**.
 
 A `Workload` is the atomic, schedulable unit of automation in GXO. It is a declarative definition that fuses two key concepts:
 *   A **`Process`**: The logic, or *what to do*. This is composed of a specific `module` and its `params`.
