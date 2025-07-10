@@ -59,17 +59,21 @@ The scope of this roadmap is the single-node **GXO Automation Kernel**. Advanced
     *   **Objective:** Implement the universal HTTP client. This is the single most important module for external integration.
     *   **Module:** `http:request` (with full support for methods, headers, bodies, and authentication helpers).
 
-*   **Milestone 4.3: Core Data Plane (Layer 4)**
-    *   **Objective:** Implement the essential ETL modules needed to process data from API responses.
+*   **Milestone 4.3: Core Data Plane & Module Alignment (Layer 4)**
+    *   **Objective:** Implement the essential ETL modules and align existing module names with the canonical GXO-SL specification.
     *   **Modules:** `data:parse` (with `json` and `text_lines` support), `data:map`, `data:filter`.
+    *   **Action: Module Renaming**
+        *   Rename `generate:from_list` module to `data:generate_from_list`.
+        *   Rename `stream:join` module to `data:join`.
+        *   Update all internal references, tests, and documentation to reflect these canonical names.
 
-## **Phase 5: Completing the Vision - Full Standard Library**
+## **Phase 5: Expanding the Core Standard Library**
 
-**Rationale:** With the critical path delivered, this phase focuses on expanding GXO's capabilities to cover the full spectrum of automation tasks by implementing the remainder of the GXO-SL. The development will be prioritized by layer, building upon already-completed primitives.
+**Rationale:** With the critical path for `run_once` workflows delivered, this phase focuses on expanding GXO's capabilities to cover a wider spectrum of automation tasks by implementing the next set of modules from the GXO-SL. The development is prioritized by layer, building upon already-completed primitives.
 
 *   **Milestone 5.1: The Network Stack (Layers 2 & 3)**
     *   **Objective:** Enable low-level network and protocol automation.
-    *   **Modules:** `connection:*` suite, `http:listen/respond`, `ssh:*` suite.
+    *   **Modules:** `connection:*` suite, `http:listen`, `http:respond`, `ssh:connect`, `ssh:command`, `ssh:script`.
 
 *   **Milestone 5.2: Advanced Data Plane & Application Modules (Layers 4 & 5)**
     *   **Objective:** Enhance ETL capabilities and add clients for common services.
@@ -78,6 +82,54 @@ The scope of this roadmap is the single-node **GXO Automation Kernel**. Advanced
 *   **Milestone 5.3: The Integration Layer (Layer 6)**
     *   **Objective:** Provide opinionated, high-level wrappers for key ecosystem tools.
     *   **Modules:** `artifact:*` suite (including `object_storage:*` dependencies), `terraform:run`.
+
+## **Phase 6: Production Hardening & Service Enablement**
+
+**Rationale:** This phase implements the `gxo daemon`, transforming GXO from an ephemeral task runner into a true, long-running Automation Kernel. It focuses on the non-negotiable features required for production deployments: a persistent state store, a secure control plane, and the ability to manage supervised and event-driven workloads.
+
+*   **Milestone 6.1: The `gxo daemon` and Lifecycle Supervisor**
+    *   **Objective:** Implement the core `gxo daemon` process and the `supervise` and `event_driven` lifecycle reconcilers.
+    *   **Key Features:** Implement the `gxo daemon` command, a gRPC API server for control, lifecycle reconcilers for `supervise` and `event_driven` workloads (including restart-backoff logic), and the `gxo ctl` command-line tool.
+
+*   **Milestone 6.2: Control Plane Security (mTLS & RBAC)**
+    *   **Objective:** Secure the `gxo daemon`'s gRPC control plane according to the security architecture.
+    *   **Key Features:** Implement mandatory mTLS on the gRPC server, with support for `pki` and `allowlist` trust models. Implement a gRPC interceptor that performs Role-Based Access Control based on the client certificate's Subject Common Name.
+
+*   **Milestone 6.3: Persistent & Encrypted State Store**
+    *   **Objective:** Replace the in-memory state store with a persistent, production-grade alternative.
+    *   **Key Features:** Create a `state.Store` implementation using BoltDB. Implement AEAD (AES-GCM) encryption for the state file, with the key provided via a secure mechanism. Provide offline tooling for key rotation.
+
+*   **Milestone 6.4: Human-in-the-Loop (`Resume Context`)**
+    *   **Objective:** Implement the `Resume Context` primitive to enable human-in-the-loop workflows.
+    *   **Key Features:** Implement the `control:wait_for_signal` module. The daemon will manage unique, single-use tokens, persist the state of paused workflows, and expose a `Resume` gRPC endpoint. Implement the `gxo ctl resume` command to submit tokens and data payloads.
+
+## **Phase 7: Advanced Workload & Supply Chain Security**
+
+**Rationale:** With the daemon and its control plane secured, this phase focuses on hardening the execution environment of the workloads themselves and securing the supply chain of the modules they use.
+
+*   **Milestone 7.1: Workload Sandboxing (`security_context`)**
+    *   **Objective:** Implement OS-level sandboxing for workloads as defined in the `security_context` configuration block.
+    *   **Key Features:** Update the configuration parser to accept the `security_context`. The `WorkloadRunner` will be enhanced to programmatically create and enter specified Linux namespaces (`mount`, `pid`), apply cgroup resource limits, and apply a restrictive `seccomp` profile before module execution.
+
+*   **Milestone 7.2: Module Signing & Verification**
+    *   **Objective:** Implement supply chain security by verifying the cryptographic signatures of modules before execution.
+    *   **Key Features:** Create tooling to sign module binaries (e.g., via `cosign`). The `gxo daemon` will be configured with trusted public keys and a `fail-closed` policy. The engine will verify module signatures before execution, rejecting any that are invalid or untrusted.
+
+## **Phase 8: Completing the GXO Standard Library**
+
+**Rationale:** With a secure, production-ready kernel, this final phase focuses on implementing the full suite of modules defined in the GXO-SL, unlocking the platform's complete range of capabilities for cloud, container, and cryptographic automation.
+
+*   **Milestone 8.1: Advanced Protocol & Crypto Modules**
+    *   **Objective:** Implement modules for DNS, advanced SSH, and core cryptographic functions.
+    *   **Modules:** `dns:query`, `ssh:upload`, `ssh:download`, `crypto:generate_key`, `crypto:encrypt`, `crypto:decrypt`.
+
+*   **Milestone 8.2: Container & Vault Integration**
+    *   **Objective:** Provide first-class integration with Docker/containers and HashiCorp Vault.
+    *   **Modules:** `docker:run`, `docker:build`, `docker:push`, `vault:read`, `vault:write`.
+
+*   **Milestone 8.3: High-Level Cloud Service Wrappers**
+    *   **Objective:** Implement opinionated, high-level wrappers for common cloud operations.
+    *   **Modules:** `aws:s3_sync`, `aws:ec2_instance`, `gcp:gcs_sync`, `gcp:gce_instance`, `azure:blob_sync`, `azure:vm_instance`, and other secrets manager integrations (`aws_secretsmanager:read`, etc.).
 
 ---
 
