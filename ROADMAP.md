@@ -133,14 +133,14 @@ The scope of this roadmap is the single-node **GXO Automation Kernel**. Advanced
 
 ---
 
-# **GXO Master Engineering Plan: Phase 1**
+# **GXO Master Engineering Plan**
+
+## **Phase 1: Foundational Refactor - Aligning with the `Workload` Model**
 
 **Document ID:** GXO-ENG-PLAN-P1
 **Version:** 1.0
 **Date:** 2025-07-08
 **Status:** Approved for Execution
-
-## **Phase 1: Foundational Refactor - Aligning with the `Workload` Model**
 
 ### **Objective**
 
@@ -162,8 +162,8 @@ This phase is executed first to pay down all architectural debt upfront. By esta
 
 **Impacted Files & Detailed Changes:**
 
-*   **New File: `internal/config/policy.go`**
-    *   **Action:** Create this new file to centralize all policy-related definitions, improving separation of concerns.
+*   **`internal/config/policy.go`**
+    *   **Action:** Centralize all policy-related definitions, improving separation of concerns.
     *   **Implementation Detail:**
         ```go
         package config
@@ -180,29 +180,12 @@ This phase is executed first to pay down all architectural debt upfront. By esta
             
             // Fields for 'event_driven' lifecycle
             Source string `yaml:"source,omitempty"`
-            
-            // ... other policy-specific fields will be added in later phases.
         }
         ```
 
 *   **`internal/config/config.go`**
     *   **Action:** Perform a comprehensive refactor of the core data structures. The `Task` struct will be removed and replaced by `Workload` and `Process`. The top-level `Playbook` will be updated to use `workloads` instead of `tasks`.
-    *   **Implementation Detail (Before):**
-        ```go
-        // Playbook represents the top-level structure...
-        type Playbook struct {
-            Tasks []Task `yaml:"tasks"`
-            // ... other fields
-        }
-
-        // Task represents a single unit of work...
-        type Task struct {
-            Name string `yaml:"name,omitempty"`
-            Type string `yaml:"type"`
-            // ... other fields
-        }
-        ```
-    *   **Implementation Detail (After):**
+    *   **Implementation Detail:**
         ```go
         // Process defines the logic of a workload: what it does.
         type Process struct {
@@ -219,11 +202,11 @@ This phase is executed first to pay down all architectural debt upfront. By esta
             // Legacy task-level fields, now part of the Workload
             Register      string                 `yaml:"register,omitempty"`
             IgnoreErrors  bool                   `yaml:"ignore_errors,omitempty"`
-            When          string                 `yaml:"when,omitempty"`       // Behavior for 'run_once'
-            Loop          interface{}            `yaml:"loop,omitempty"`       // Behavior for 'run_once'
-            LoopControl   *LoopControlConfig     `yaml:"loop_control,omitempty"` // Behavior for 'run_once'
-            Retry         *RetryConfig           `yaml:"retry,omitempty"`      // Behavior for 'run_once'
-            Timeout       string                 `yaml:"timeout,omitempty"`    // Behavior for 'run_once'
+            When          string                 `yaml:"when,omitempty"`
+            Loop          interface{}            `yaml:"loop,omitempty"`
+            LoopControl   *LoopControlConfig     `yaml:"loop_control,omitempty"`
+            Retry         *RetryConfig           `yaml:"retry,omitempty"`
+            Timeout       string                 `yaml:"timeout,omitempty"`
             StatePolicy   *StatePolicy           `yaml:"state_policy,omitempty"`
             InternalID    string                 `yaml:"-"`
         }
@@ -262,10 +245,7 @@ This phase is executed first to pay down all architectural debt upfront. By esta
             ```json
             "Process": {
               "type": "object",
-              "properties": {
-                "module": { "type": "string", "minLength": 1 },
-                "params": { "type": "object", "additionalProperties": true }
-              },
+              "properties": { "module": { "type": "string" }, "params": { "type": "object" } },
               "required": ["module"]
             }
             ```
@@ -274,14 +254,8 @@ This phase is executed first to pay down all architectural debt upfront. By esta
             "LifecyclePolicy": {
               "type": "object",
               "properties": {
-                "policy": {
-                  "description": "The execution strategy for this workload.",
-                  "type": "string",
-                  "enum": ["run_once", "supervise", "event_driven", "scheduled"]
-                },
-                "restart_policy": { "type": "string", "enum": ["always", "on_failure", "never"] },
-                "cron": { "type": "string" },
-                "source": { "type": "string" }
+                "policy": { "type": "string", "enum": ["run_once", "supervise", "event_driven", "scheduled"] },
+                "restart_policy": { "type": "string", "enum": ["always", "on_failure", "never"] }
               },
               "required": ["policy"]
             }
@@ -291,29 +265,9 @@ This phase is executed first to pay down all architectural debt upfront. By esta
     *   **Action:** Rewrite the `ValidatePlaybookStructure` function to operate on the new `Workload` structs and add new validation rules specific to lifecycles.
     *   **Detailed Changes:**
         1.  The main loop must change from `for i := range p.Tasks` to `for i := range p.Workloads`.
-        2.  All log messages and error text must be updated from "task" to "workload" (e.g., `fmt.Sprintf("workload %d ('%s')", i, workload.Name)`).
+        2.  All log messages and error text must be updated from "task" to "workload".
         3.  All references to `task.Type` must be changed to `workload.Process.Module`.
-        4.  **Add new validation logic:**
-            ```go
-            // In ValidatePlaybookStructure's loop over workloads
-            workload := &p.Workloads[i]
-            
-            // Check for required nested objects
-            if workload.Lifecycle.Policy == "" {
-                errs = append(errs, gxoerrors.NewValidationError(fmt.Sprintf("%s: lifecycle.policy is a required field", workloadDisplayName), nil))
-            }
-            if workload.Process.Module == "" {
-                 errs = append(errs, gxoerrors.NewValidationError(fmt.Sprintf("%s: process.module is a required field", workloadDisplayName), nil))
-            }
-
-            // Initially, the `gxo run` command only supports the 'run_once' lifecycle.
-            // This validation prevents users from trying to run other lifecycles
-            // before the `gxo daemon` is implemented, avoiding confusion.
-            if workload.Lifecycle.Policy != "run_once" {
-                // This check prepares for the future and provides a clear error message.
-                errs = append(errs, gxoerrors.NewValidationError(fmt.Sprintf("%s: lifecycle policy '%s' is not supported by 'gxo run'. Use 'gxo daemon' for this lifecycle.", workloadDisplayName, workload.Lifecycle.Policy), nil))
-            }
-            ```
+        4.  Add new validation logic for required nested objects (`lifecycle`, `process`) and to ensure that `gxo run` only accepts `run_once` lifecycles, providing a clear error message for other policies.
 
 ---
 
@@ -321,98 +275,108 @@ This phase is executed first to pay down all architectural debt upfront. By esta
 
 **Objective:** Provide a seamless, robust, and user-friendly upgrade path for all existing `v0.1.2a` playbooks to the new `v1.0.0` `Workload`-based format.
 
-**Rationale:** A hard break with the past is user-hostile. Existing playbooks are valuable assets. Suddenly failing all of them on upgrade would severely damage user trust. The **in-memory shim** provides immediate operational continuity by allowing `gxo run` to function with old playbooks (with a clear deprecation warning). The **`gxo migrate` command** provides the permanent, user-initiated solution. This dual approach respects existing processes while guiding users toward the new, superior format.
+**Rationale:** A hard break with the past is user-hostile. The in-memory shim provides immediate operational continuity by allowing `gxo run` to function with old playbooks (with a clear deprecation warning). The `gxo migrate` command provides the permanent, user-initiated solution.
 
 **Impacted Files & Detailed Changes:**
 
 *   **`internal/config/load.go`**
-    *   **Action:** Refactor the `LoadPlaybook` function to implement the in-memory migration shim. This logic must execute *before* the strict unmarshaling into the final `config.Playbook` struct.
+    *   **Action:** Refactor the `LoadPlaybook` function to implement the in-memory migration shim.
     *   **Detailed Logic:**
-        1.  **Light Unmarshal:** Define a local, temporary `migrationHelper` struct that contains *both* a `Tasks []config.Task` field (with the old `tasks` YAML tag) and the new `Workloads []config.Workload` field. Unmarshal the raw playbook YAML into this helper struct *without* strict mode.
-        2.  **Detect & Migrate:** Check if `len(helper.Tasks) > 0` and `len(helper.Workloads) == 0`. If true, it's a legacy playbook.
-        3.  **Log Deprecation:** If migration is triggered, use the logger to emit a clear `WARN` level message: `"Playbook uses the deprecated 'tasks' key. It is being migrated in-memory. To upgrade the file permanently, run 'gxo migrate -f <file>'. The 'tasks' key will be removed in a future version."`
-        4.  **Perform Conversion:** Iterate over `helper.Tasks` and create a new `[]Workload`. For each old `Task`, create a new `Workload` and map the fields:
-            *   `Name` -> `Name`
-            *   `Type` -> `Process.Module`
-            *   `Params` -> `Process.Params`
-            *   Set `Lifecycle.Policy` to the default `"run_once"`.
-            *   Copy all other fields (`Register`, `When`, `Loop`, etc.) to the new `Workload` struct.
-        5.  **Re-Marshal:** Convert the modified `helper` struct (which now has a populated `Workloads` field and an empty `Tasks` field) back into YAML bytes.
-        6.  **Strict Unmarshal:** Use these newly generated YAML bytes for the final, strict unmarshal into the official `config.Playbook` struct. The rest of the engine will be completely unaware that a migration occurred.
+        1.  **Light Unmarshal:** In `LoadPlaybook`, before strict unmarshaling, define a local `migrationHelper` struct and unmarshal the YAML into it.
+            ```go
+            type migrationHelper struct {
+                // Legacy key
+                Tasks     []Task `yaml:"tasks"`
+                // New key
+                Workloads []Workload `yaml:"workloads"`
+                // Pass-through other playbook fields
+                Name          string                 `yaml:"name"`
+                SchemaVersion string                 `yaml:"schemaVersion"`
+                Vars          map[string]interface{} `yaml:"vars,omitempty"`
+                StatePolicy   *StatePolicy           `yaml:"state_policy,omitempty"`
+            }
+            // yaml.Unmarshal(playbookYAML, &helper)
+            ```
+        2.  **Detect & Migrate:** Check if `len(helper.Tasks) > 0 && len(helper.Workloads) == 0`.
+        3.  **Log Deprecation:** If migrating, log a `WARN` message: `"Playbook uses the deprecated 'tasks' key. It is being migrated in-memory. To upgrade the file permanently, run 'gxo migrate -f <file>'."`
+        4.  **Perform Conversion:** Iterate over `helper.Tasks` and transform into `helper.Workloads`.
+            ```go
+            // Inside the migration logic loop
+            newWorkloads := make([]Workload, len(helper.Tasks))
+            for i, task := range helper.Tasks {
+                newWorkloads[i] = Workload{
+                    Name: task.Name,
+                    Lifecycle: LifecyclePolicy{
+                        Policy: "run_once", // Default lifecycle for all legacy tasks
+                    },
+                    Process: Process{
+                        Module: task.Type,
+                        Params: task.Params,
+                    },
+                    // Copy all other fields from task to workload
+                    Register: task.Register,
+                    IgnoreErrors: task.IgnoreErrors,
+                    When: task.When,
+                    Loop: task.Loop,
+                    LoopControl: task.LoopControl,
+                    Retry: task.Retry,
+                    Timeout: task.Timeout,
+                    StatePolicy: task.StatePolicy,
+                }
+            }
+            helper.Workloads = newWorkloads
+            helper.Tasks = nil // Important: nil out the old slice
+            ```
+        5.  **Re-Marshal & Strict Unmarshal:** Convert the modified `helper` struct back into YAML bytes, then use these bytes for the final, strict unmarshal into the official `config.Playbook` struct.
 
 *   **New File: `cmd/gxo/migrate.go`**
     *   **Action:** Create this file to define the new `gxo migrate` command using the Cobra library.
     *   **Detailed Logic (`RunE` function):**
-        1.  Define and require a `-f, --filename` flag.
-        2.  Read the legacy playbook file specified by the flag.
-        3.  Call the (now-refactored) `config.LoadPlaybook` function. This will automatically run the in-memory migration shim and return a fully compliant, in-memory `v1.0.0` `Playbook` object.
-        4.  Marshal the returned `Playbook` object back to YAML.
+        1.  Define a required `-f, --filename` flag.
+        2.  Read the legacy playbook file.
+        3.  Call `config.LoadPlaybook` (which now contains the migration shim) to get a modern, in-memory `Playbook` object.
+        4.  Marshal the returned `Playbook` object back to YAML using an encoder that does not emit zero-value fields (`omitempty`).
         5.  Print the resulting YAML to standard output.
 
 *   **New File: `internal/config/load_test.go`**
     *   **Action:** Create a dedicated test file to validate the migration shim's behavior.
-    *   **Required Test Cases:**
-        1.  `TestLoadPlaybook_WithLegacyTasksKey`: Provide a valid legacy playbook. Assert that it loads without error, the returned `Playbook` object has the correct number of `Workloads`, and each migrated workload has the `"run_once"` lifecycle.
-        2.  `TestLoadPlaybook_WithModernWorkloadsKey`: Provide a modern playbook. Assert that it loads without error and that no deprecation warning is logged.
-        3.  `TestLoadPlaybook_WithAmbiguousKeys`: Provide a playbook that defines *both* `tasks:` and `workloads:`. Assert that `LoadPlaybook` returns a `ValidationError` stating that the keys are mutually exclusive.
+    *   **Required Test Cases:** `TestLoadPlaybook_WithLegacyTasksKey`, `TestLoadPlaybook_WithModernWorkloadsKey`, `TestLoadPlaybook_WithAmbiguousKeys`.
 
 ---
 
 ### **Milestone 1.4: Execute Cross-Cutting Refactor**
 
-**Objective:** Systematically propagate the `Task` -> `Workload` rename and the `Type` -> `Process.Module` change through every layer of the application to ensure conceptual consistency and prevent runtime bugs.
+**Objective:** Systematically propagate the `Task` -> `Workload` rename and the `Type` -> `Process.Module` change through every layer of the application.
 
-**Rationale:** A partial rename is a source of confusion for developers and a breeding ground for subtle bugs. This must be a single, sweeping, and complete operation to ensure the entire system speaks the new architectural language.
+**Rationale:** A partial rename is a source of confusion and a breeding ground for bugs. This must be a single, sweeping operation to ensure the entire system speaks the new architectural language.
 
 **Impacted Files & Detailed Changes (Checklist):**
 
 1.  **Engine Core (`internal/engine/`):**
-    *   `task_runner.go` -> **Rename file to `workload_runner.go`**.
-    *   `workload_runner.go`:
-        *   Rename `TaskRunner` struct to `WorkloadRunner`.
-        *   Rename `ExecuteTask` method to `ExecuteWorkload`, changing its signature to accept `*config.Workload`.
-    *   `dag.go`:
-        *   Rename `Node.Task` field to `Node.Workload` (of type `*config.Workload`). Update all internal logic.
-    *   `engine.go`:
-        *   Rename field `taskRunner` to `workloadRunner`.
-        *   Rename all local variables: `taskID` -> `workloadID`, `taskStatuses` -> `workloadStatuses`.
-        *   Update all log messages to use the term "workload".
-    *   `engine_test.go`, `engine_policy_test.go`, `engine_security_test.go`:
-        *   Update all test playbooks in these files to use the new `workloads:` syntax.
+    *   Rename `task_runner.go` to `workload_runner.go`.
+    *   `workload_runner.go`: Rename `TaskRunner` to `WorkloadRunner`, `ExecuteTask` to `ExecuteWorkload`.
+    *   `dag.go`: Rename `Node.Task` to `Node.Workload`.
+    *   `engine.go`: Rename variables and update log messages.
+    *   Update all `engine_*_test.go` files to use `workloads:`.
 
 2.  **Public API & Events (`pkg/gxo/v1/` and `internal/events/`):**
-    *   `pkg/gxo/v1/api.go`:
-        *   Rename `TaskResult` struct to `WorkloadResult`.
-        *   Rename `ExecutionReport.TaskResults` field to `WorkloadResults`.
-        *   **CRITICAL:** Update the JSON struct tags to match the new field names (e.g., `json:"workload_results"`) to avoid breaking external JSON consumers.
-    *   `pkg/gxo/v1/events/bus.go`:
-        *   Rename event constants: `TaskStart` -> `WorkloadStart`, `TaskEnd` -> `WorkloadEnd`, `TaskStatusChanged` -> `WorkloadStatusChanged`.
-        *   Update the `Event` struct fields: `TaskName` -> `WorkloadName`, `TaskID` -> `WorkloadID`.
-    *   `internal/engine/engine.go` (Event Emission):
-        *   Update the `handleWorkloadCompletion` function to emit the new `Workload...` event types.
-        *   **Deprecation Strategy:** For one minor version, emit *both* the old `Task...` and new `Workload...` events to provide a backward-compatibility window for any external event consumers.
-    *   `internal/events/metrics_listener.go`:
-        *   Update the `handleEvent` switch statement to listen for the *new* `Workload...` event types.
+    *   `pkg/gxo/v1/api.go`: Rename `TaskResult` to `WorkloadResult`, `ExecutionReport.TaskResults` to `WorkloadResults` (including JSON tags).
+    *   `pkg/gxo/v1/events/bus.go`: Rename constants (`TaskStart` -> `WorkloadStart`) and `Event` struct fields (`TaskName` -> `WorkloadName`).
+    *   `internal/engine/engine.go`: Update event emission logic.
+    *   `internal/events/metrics_listener.go`: Update event handling logic.
 
 3.  **Module & Template Interface (`internal/module/` and `internal/template/`):**
-    *   `internal/module/module.go`:
-        *   Rename the `ExecutionContext.Task()` method to `ExecutionContext.Workload() *config.Workload`.
-    *   `internal/template/template.go`:
-        *   Update `ExtractVariables` to recognize the new state path `_gxo.workloads.<name>.status`.
-        *   **Backward Compatibility:** For a limited time, the logic should also recognize the old `_gxo.tasks.<name>.status` path and log a deprecation warning if it is used.
-
-Of course. Here is the complete and exhaustive engineering plan for **Phase 2**, following the same detailed format.
+    *   `internal/module/module.go`: Rename `ExecutionContext.Task()` to `ExecutionContext.Workload()`.
+    *   `internal/template/template.go`: Update `ExtractVariables` to recognize `_gxo.workloads.<name>.status`, with backward compatibility.
 
 ---
 
-# **GXO Master Engineering Plan: Phase 2**
+## **Phase 2: Hardening the Core - Comprehensive Test Suite**
 
 **Document ID:** GXO-ENG-PLAN-P2
 **Version:** 1.0
 **Date:** 2025-07-09
 **Status:** Approved for Execution
-
-## **Phase 2: Hardening the Core - Comprehensive Test Suite**
 
 ### **Objective**
 
@@ -433,24 +397,37 @@ The Phase 1 refactor fundamentally changes the core data structures and logic of
 **Impacted Files & Detailed Changes:**
 
 *   **New File: `cmd/gxo/main_test.go`**
-    *   **Action:** Create a new test file dedicated to testing the `main` package's handler functions (`runExecuteCommand`, `runValidateCommand`).
-    *   **Implementation Detail:** This will require mocking system-level functions. A common pattern is to replace `os.Exit` with a function that records the exit code in a variable. `stdout` and `stderr` can be captured by redirecting `os.Stdout` and `os.Stderr` to an in-memory buffer (`bytes.Buffer`) during the test.
-    *   **Required Test Cases:**
-        1.  `TestRunExecute_Success`: Provide a valid, simple `run_once` playbook. Verify that the final exit code is `0` and that key success messages are printed to the captured `stdout`.
-        2.  `TestRunExecute_ValidationFailure`: Provide a playbook with a clear schema error (e.g., a required field is missing). Verify that the exit code is `2` (UsageError) or `1` (Failure) and that the captured `stderr` contains a clear "validation failed" error message.
-        3.  `TestRunExecute_RuntimeFailure`: Provide a valid playbook where a workload is designed to fail (e.g., `exec` a non-existent command). Verify the exit code is `1` and `stderr` contains the failure details.
-        4.  `TestRunValidate_Success`: Test the `gxo validate` command with a valid playbook. Verify exit code `0` and a "validation successful" message.
-        5.  `TestRunValidate_Failure`: Test `gxo validate` with an invalid playbook. Verify exit code `1` and that `stderr` contains the validation error details.
+    *   **Action:** Create a new test file dedicated to testing the `main` package's handler functions.
+    *   **Implementation Detail:**
+        ```go
+        // Example test case for successful execution
+        func TestRunExecute_Success(t *testing.T) {
+            // Setup: Capture stdout/stderr, mock os.Exit
+            oldStdout := os.Stdout
+            r, w, _ := os.Pipe()
+            os.Stdout = w
+            // ...
+            
+            // Action: Call main.runExecuteCommand(...) with a valid playbook
+            
+            // Assert: Check exit code, check captured stdout for success messages
+        }
+        ```
+    *   **Required Test Cases:** `TestRunExecute_Success`, `TestRunExecute_ValidationFailure`, `TestRunExecute_RuntimeFailure`, `TestRunValidate_Success`, `TestRunValidate_Failure`.
 
 *   **New File: `internal/command/command_test.go`**
     *   **Action:** Create a new test file to exhaustively test the `defaultRunner.Run` method.
-    *   **Implementation Detail:** The current `command.go` already uses a `Runner` interface, which is excellent. The tests will not use the `defaultRunner` directly. Instead, they will create a mock `Runner` that allows for precise control over the `exec.Cmd` behavior without actually running system commands. This is crucial for fast, reliable, and platform-independent tests.
-        *   A mock command struct can be created to satisfy an interface that mimics `*exec.Cmd`. The test will then inject this mock.
-    *   **Required Test Cases:**
-        1.  `TestRun_Success`: Mock a command like `echo "hello"`. Configure the mock to produce specific `stdout`, `stderr`, and an exit code of `0`. Verify that the returned `CommandResult` struct contains exactly this data.
-        2.  `TestRun_NonZeroExit`: Mock a command that exits with code `12`. Verify that the returned `result.ExitCode` is `12` and that the `Run` function itself returns a `nil` error (as the command execution was successful, even if the command's internal logic failed).
-        3.  `TestRun_ContextCancellation`: Start a mock command that simulates a long-running process (e.g., `sleep 5`). Create a `context.WithCancel` and cancel it shortly after starting the command. Verify that the `Run` function returns `context.Canceled` as its error.
-        4.  `TestRun_CommandNotFound`: Mock the behavior of `exec.LookPath` failing. Verify that the `Run` function returns an appropriate `exec.ErrNotFound` error.
+    *   **Implementation Detail:**
+        ```go
+        // Define a mock command runner for tests
+        type mockCmdRunner struct {
+            // fields to control mock behavior (e.g., exit code, stdout)
+        }
+        func (m *mockCmdRunner) Run(...) (*command.CommandResult, error) {
+            // return canned results
+        }
+        ```
+    *   **Required Test Cases:** `TestRun_Success`, `TestRun_NonZeroExit`, `TestRun_ContextCancellation`, `TestRun_CommandNotFound`.
 
 ---
 
@@ -462,42 +439,11 @@ The Phase 1 refactor fundamentally changes the core data structures and logic of
 
 **Impacted Files & Detailed Changes:**
 
-*   **`internal/config/load_test.go`**
-    *   **Action:** Enhance this file (or create it if it doesn't exist) to specifically test `LoadPlaybook` with the new `Workload` syntax.
-    *   **Required Test Cases:**
-        1.  `TestLoadPlaybook_ValidWorkload`: Load a modern playbook using the `workloads:` key. Assert no error is returned and the `Playbook` struct is populated correctly.
-        2.  `TestLoadPlaybook_MissingRequiredFields`: Test playbooks that are missing `workload.name`, `workload.lifecycle.policy`, or `workload.process.module`. Assert that a `ValidationError` is returned with a clear message for each case.
-        3.  Re-run the tests from Milestone 1.3 (`TestLoadPlaybook_WithLegacyTasksKey`, `TestLoadPlaybook_WithAmbiguousKeys`) to ensure the migration shim continues to work as expected after the refactor.
-
-*   **New File: `internal/config/validation_test.go`**
-    *   **Action:** Create a dedicated test suite for `ValidatePlaybookStructure`.
-    *   **Required Test Cases:** Create separate test functions for *each* specific validation rule:
-        1.  `TestValidate_DependencyCycle`: Test with a playbook that has a clear A -> B -> A dependency. Assert a cycle error is returned.
-        2.  `TestValidate_SelfReference`: Test a workload that depends on itself (e.g., `when: "{{ ._gxo.workloads.my_task.status == 'Completed' }}"`). Assert an error is returned.
-        3.  `TestValidate_InvalidIdentifier`: Test with invalid names for `register` or `loop_var`. Assert an error.
-        4.  `TestValidate_BadDurationString`: Test with an invalid format in a `retry.delay` or `timeout` field. Assert an error.
-        5.  `TestValidate_UndefinedReference`: Test a workload that depends on a workload name that does not exist. Assert an error.
-
-*   **New File: `internal/engine/channel_manager_test.go`**
-    *   **Action:** Test the `ChannelManager`'s logic for creating and managing streaming channels and their overflow policies.
-    *   **Required Test Cases:**
-        1.  `TestCreateChannels_FanInFanOut`: Build a mock DAG with a fan-out producer and a fan-in consumer. Call `CreateChannels` and assert that the internal maps of the `ChannelManager` are wired correctly (correct number of channels, correct producer/consumer relationships).
-        2.  `TestManagedChannel_OverflowBlock`: Create a `managedChannel` with a buffer size of 1 and a "block" policy. Fill the buffer, then start a new goroutine to write to it again. Assert that the goroutine blocks. Then, read from the channel and assert the goroutine unblocks.
-        3.  `TestManagedChannel_OverflowDrop`: Test the "drop_new" policy. Fill the buffer, then try to write again. Assert that the write call returns a `PolicyViolationError` immediately and does not block.
-
-*   **New File: `internal/engine/dag_test.go`**
-    *   **Action:** Isolate and test the `BuildDAG` function.
-    *   **Implementation Detail:** Use simple, hand-crafted `config.Playbook` structs as input instead of parsing YAML. This allows for precise testing of the DAG logic itself.
-    *   **Required Test Cases:**
-        1.  `TestBuildDAG_StateAndStreamDependencies`: Create a playbook where Task A produces a stream for B, and Task C depends on the registered result of B. Assert that the resulting DAG has the correct A -> B -> C dependency chain.
-        2.  `TestBuildDAG_PolicyResolution`: Create a playbook with a global policy and a task with an overriding policy. Assert that the final `Node` in the DAG has the correctly merged, task-specific policy.
-
-*   **`engine_test.go`, `engine_policy_test.go`, `engine_security_test.go`**
-    *   **Action:** A full review and update of all existing engine-level integration tests.
-    *   **Detailed Changes:**
-        1.  Change all playbook YAML in these tests to use the new `workloads:`, `process:`, and `lifecycle:` syntax.
-        2.  Update assertions that check registered state to look for `_gxo.workloads...` instead of `_gxo.tasks...`.
-        3.  Ensure that tests for `when`, `loop`, and `retry` continue to pass with the new `Workload` struct.
+*   **`internal/config/load_test.go`:** Enhance file to test `LoadPlaybook` with the new `Workload` syntax. Test cases: `TestLoadPlaybook_ValidWorkload`, `TestLoadPlaybook_MissingRequiredFields`.
+*   **New File: `internal/config/validation_test.go`:** Create a dedicated test suite for `ValidatePlaybookStructure`. Test cases: `TestValidate_DependencyCycle`, `TestValidate_SelfReference`, `TestValidate_InvalidIdentifier`, `TestValidate_UndefinedReference`.
+*   **New File: `internal/engine/channel_manager_test.go`:** Test the `ChannelManager`'s logic for creating and managing streaming channels. Test cases: `TestCreateChannels_FanInFanOut`, `TestManagedChannel_OverflowBlock`.
+*   **New File: `internal/engine/dag_test.go`:** Isolate and test the `BuildDAG` function. Test cases: `TestBuildDAG_StateAndStreamDependencies`, `TestBuildDAG_PolicyResolution`.
+*   **`engine_test.go`, `engine_policy_test.go`, `engine_security_test.go`:** A full review and update of all existing engine-level integration tests to use the new `workloads:` syntax.
 
 ---
 
@@ -505,45 +451,39 @@ The Phase 1 refactor fundamentally changes the core data structures and logic of
 
 **Objective:** Go beyond standard unit tests to find more subtle bugs in complex, concurrent, or security-sensitive areas of the codebase.
 
-**Rationale:** Concurrency bugs (races, deadlocks) and parsing vulnerabilities are notoriously difficult to find with simple, predictable unit tests. Fuzzing and targeted race condition tests are necessary to build confidence in the system's robustness under unpredictable or high-stress conditions.
+**Rationale:** Concurrency bugs and parsing vulnerabilities are notoriously difficult to find with simple unit tests. Fuzzing and targeted race condition tests are necessary to build confidence in the system's robustness.
 
 **Impacted Files & Detailed Changes:**
 
 *   **New File: `internal/config/fuzz_test.go`**
-    *   **Action:** Create a fuzz test for `config.LoadPlaybook` using Go's built-in `testing.F` framework.
+    *   **Action:** Create a fuzz test for `config.LoadPlaybook` using Go's `testing.F` framework.
     *   **Implementation Detail:**
-        1.  The fuzzer (`f.Fuzz(func(t *testing.T, playbookBytes []byte) { ... })`) will be the test's core.
-        2.  Seed the fuzzer with valid YAML snippets using `f.Add(...)`. Include examples of all major features (loops, when, all policies, etc.).
-        3.  Inside the fuzz function, call `config.LoadPlaybook`. The only assertion needed is that the function **does not panic**. The goal of this test is to find inputs that crash the YAML parser or the validation logic.
+        ```go
+        func FuzzLoadPlaybook(f *testing.F) {
+            // Seed with valid examples
+            f.Add([]byte(`name: "valid_fuzz" ...`))
+            
+            f.Fuzz(func(t *testing.T, data []byte) {
+                // The only goal is to not panic
+                _, _ = config.LoadPlaybook(data, "fuzz_input")
+            })
+        }
+        ```
 
 *   **New File: `internal/events/backpressure_test.go`**
     *   **Action:** Create a targeted integration test for the `ChannelEventBus` backpressure mechanism.
-    *   **Implementation Detail:**
-        1.  Create a `ChannelEventBus` with a small buffer (e.g., size 2).
-        2.  Create a mock logger that captures log messages instead of printing them. Inject this into the bus.
-        3.  Fill the event bus buffer completely by calling `Emit` twice.
-        4.  Call `Emit` a third time.
-        5.  Assert that the third call does not block (it should return immediately).
-        6.  Assert that the mock logger captured a log message containing "dropping event" or "buffer full".
+    *   **Implementation Detail:** Create a bus with a small buffer, fill it, and assert that a subsequent `Emit` call drops the event and logs a warning.
 
-*   **`engine_security_test.go`**
-    *   **Action:** Add a new test case, `TestSecretRedaction_RaceCondition`, to specifically target the thread-safety of the secret redaction mechanism.
-    *   **Implementation Detail:**
-        1.  The test function will use `t.Parallel()` to indicate it can run alongside other parallel tests.
-        2.  It will use a `sync.WaitGroup` to launch multiple (e.g., 10) goroutines concurrently.
-        3.  Each goroutine will execute a simple playbook that uses the `secret` template function and registers the result. This will cause concurrent access to the `SecretTracker` and redaction logic.
-        4.  The test will pass if it completes without the Go race detector (`go test -race`) reporting any data races. This proves that the per-instance `SecretTracker` and the redaction logic are thread-safe.
+*   **`engine_security_test.go`:** Add a new test case, `TestSecretRedaction_RaceCondition`, to target the thread-safety of the secret redaction mechanism using multiple goroutines and `go test -race`.
 
 ---
 
-# **GXO Master Engineering Plan: Phase 3**
+## **Phase 3: Developer Experience - The Playbook Mocking Framework**
 
 **Document ID:** GXO-ENG-PLAN-P3
 **Version:** 1.0
 **Date:** 2025-07-10
 **Status:** Approved for Execution
-
-## **Phase 3: Developer Experience - The Playbook Mocking Framework**
 
 ### **Objective**
 
@@ -563,47 +503,24 @@ A robust testing framework is a feature, not an afterthought. Providing develope
 
 **Impacted Files & Detailed Changes:**
 
-*   **`cmd/gxo/main.go`**
-    *   **Action:** Modify the main CLI router (assumed to be Cobra from the roadmap) to add a new top-level `test` command. The main function will delegate to a new handler function for this command.
-    *   **Implementation Detail:**
-        ```go
-        // In the root command's init() function
-        rootCmd.AddCommand(newTestCmd())
-        ```
-
-*   **New File: `cmd/gxo/test.go`**
-    *   **Action:** Create this file to define the `gxo test` command, its flags, and its execution logic.
-    *   **Implementation Detail (Cobra Command):**
-        ```go
-        // testCmd represents the test command
-        var testCmd = &cobra.Command{
-            Use:   "test [path...]",
-            Short: "Executes GXO test playbooks",
-            Long:  `Discovers and executes GXO test playbooks (files ending in *.test.gxo.yaml)
-in the specified directories or files.`,
-            RunE: runTestCommand,
-        }
-
-        func init() {
-            testCmd.Flags().BoolP("verbose", "v", false, "Enable verbose test output")
-            testCmd.Flags().String("run", "", "Run only tests matching the regular expression")
-            // ... other standard test flags
-        }
-        ```
+*   **`cmd/gxo/main.go`:** Add a new `test` command to the root Cobra command.
+*   **New File: `cmd/gxo/test.go`:** Define the `gxo test` command, its flags (`-v`, `--run`), and its execution logic.
     *   **Detailed Logic (`runTestCommand` function):**
-        1.  **Discovery:** The function will walk the filesystem paths provided as arguments (or the current directory if none are provided). It will discover all files matching the pattern `*.test.gxo.yaml`.
-        2.  **Execution Loop:** It will iterate through each discovered test file.
-        3.  **Test Execution:** For each file, it will create a new instance of the GXO engine configured specifically for testing (e.g., with a higher default log level if `-v` is passed). It will then call `engine.RunPlaybook`.
-        4.  **Result Reporting:** It will inspect the returned `ExecutionReport` and error. A successful test run is one that returns no error. It will print structured output to `stdout` in a format similar to `go test`:
+        1.  **Discovery:** Use `filepath.Walk` to discover files matching `*.test.gxo.yaml`.
+        2.  **Execution Loop:** Iterate through each discovered test file. Inside the loop:
+            ```go
+            // Simplified logic
+            fmt.Printf("=== RUN   %s\n", testFile.Path)
+            engine := createNewTestEngine() // Helper to get a fresh engine
+            report, err := engine.RunPlaybook(ctx, testFile.Content)
+            if err != nil || report.OverallStatus != "Completed" {
+                fmt.Printf("--- FAIL: %s (%v)\n", testFile.Name, report.Duration)
+                // Print detailed error from report
+            } else {
+                fmt.Printf("--- PASS: %s (%v)\n", testFile.Name, report.Duration)
+            }
             ```
-            === RUN   path/to/my_first.test.gxo.yaml
-            --- PASS: my_first_test (3.45s)
-            === RUN   path/to/another_test.test.gxo.yaml
-            --- FAIL: another_test (1.23s)
-                workload 'assert_api_response' failed: validation error: API status code was 500, expected 200
-            FAIL
-            ```
-        5.  **Exit Code:** The command will exit with code `0` if all tests pass, and `1` if any test fails.
+        3.  **Exit Code:** Maintain a boolean flag. If any test fails, set it to true. Exit `1` if the flag is true, else `0`.
 
 ---
 
@@ -618,84 +535,34 @@ in the specified directories or files.`,
 *   **New File: `modules/test/mock_http_server/mock_http_server.go`**
     *   **Action:** Create the `test:mock_http_server` module.
     *   **Synopsis:** Stands up a temporary, in-memory HTTP server for the duration of a test.
-    *   **Description:** This module starts a real HTTP server on a random, available localhost port. It is configured declaratively with a list of expected requests and their corresponding responses. When the test playbook finishes, the GXO engine will terminate the module, and the server will be shut down automatically. This allows testing of `http:request` workloads without any network access.
-    *   **Supported Lifecycles:** `run_once`
-    *   **Parameters:**
-        | Name | Type | Required? | Description |
-        |---|---|---|---|
-        | `handlers` | list[map] | Yes | A list of handler definitions. Each map defines an expectation. |
-    *   **Handler Map Structure:**
-        | Key | Type | Description |
-        |---|---|---|
-        | `request` | map | Defines the expected incoming request. |
-        | `response` | map | Defines the response to send if the request matches. |
-    *   **Request Map Structure:** `{ "method": "GET", "path": "/api/v1/users" }`
-    *   **Response Map Structure:** `{ "status_code": 200, "body": "{\"id\": 1}", "headers": {"Content-Type": "application/json"} }`
-    *   **Return Values / Summary:** `{ "server_url": string }` containing the base URL of the running mock server (e.g., `http://127.0.0.1:54321`). This can be used by subsequent `http:request` workloads.
+    *   **Implementation (`Perform` method):**
+        1.  Parse the `handlers` parameter.
+        2.  Create a `http.ServeMux`.
+        3.  For each handler, register a function on the mux that checks `http.Request.Method` and `http.Request.URL.Path`.
+        4.  If a request matches, write the configured `status_code`, `headers`, and `body` to the `http.ResponseWriter`.
+        5.  Start `httptest.NewServer` with the configured mux.
+        6.  The `Perform` method must block until its context is cancelled. A `select { case <-ctx.Done(): }` will achieve this. This ensures the server runs for the whole playbook.
+        7.  Return `{ "server_url": server.URL }` as the summary.
 
 *   **New File: `modules/test/assert/assert.go`**
     *   **Action:** Create the `test:assert` module.
     *   **Synopsis:** Makes assertions about the state of a playbook run.
-    *   **Description:** This module is the core of playbook validation. It provides a rich set of assertion types to check values from the state store. If any assertion fails, the module returns a fatal error with a descriptive message, which causes the `gxo test` runner to mark the test as failed.
-    *   **Supported Lifecycles:** `run_once`
-    *   **Parameters:**
-        | Name | Type | Required? | Description |
-        |---|---|---|---|
-        | `assertions`| list[map] | Yes | A list of assertion definitions to evaluate. |
-    *   **Assertion Map Structure:** Each assertion is a map that must contain `actual` and one assertion operator key (e.g., `equal_to`, `contains`).
-        | Key | Type | Description |
-        |---|---|---|
-        | `actual` | any | The value to test, typically from a template variable (e.g., `{{ .my_result }}`). |
-        | `equal_to` | any | Asserts that `actual` is deeply equal to this value. |
-        | `not_equal_to`| any | Asserts that `actual` is not equal to this value. |
-        | `contains` | string | Asserts that `actual` (which must be a string, list, or map) contains this value. |
-        | `is_true` | bool | Asserts that `actual` evaluates to `true`. |
-        | `is_nil` | bool | Asserts that `actual` is `nil`. |
-        | `matches_regex`| string | Asserts that `actual` (must be a string) matches the given regular expression. |
-    *   **Return Values / Summary:** `{ "assertions_passed": int }` on success. On failure, returns a fatal error.
-    *   **Example Test Playbook (`my_api.test.gxo.yaml`):**
-        ```yaml
-        workloads:
-          # Setup: Stand up a mock server for our API
-          - name: start_mock_api
-            process:
-              module: test:mock_http_server
-              params:
-                handlers:
-                  - request: { method: "GET", path: "/api/users/1" }
-                    response: { status_code: 200, body: '{"name": "Alice"}' }
-            register: mock_server
-
-          # Action: Run the workload that calls the API
-          - name: get_user_data
-            process:
-              module: http:request
-              params:
-                url: "{{ .mock_server.server_url }}/api/users/1"
-            register: api_response
-
-          # Verification: Assert the results are correct
-          - name: verify_response
-            process:
-              module: test:assert
-              params:
-                assertions:
-                  - actual: "{{ .api_response.status_code }}"
-                    equal_to: 200
-                  - actual: "{{ .api_response.json_body.name }}"
-                    equal_to: "Alice"
-        ```
+    *   **Implementation (`Perform` method):**
+        1.  Parse the `assertions` list parameter.
+        2.  Loop through each assertion map.
+        3.  Use a `switch` statement on the keys of the assertion map (`equal_to`, `contains`, `is_true`, etc.).
+        4.  Inside each case, perform the corresponding check (e.g., `reflect.DeepEqual` for `equal_to`).
+        5.  If an assertion fails, return an immediate fatal error: `return nil, gxoerrors.NewValidationError(...)`.
+        6.  If all assertions pass, return `{ "assertions_passed": count }`.
 
 ---
 
-# **GXO Master Engineering Plan: Phase 4**
+## **Phase 4: The Critical Path - REST API & ETL Enablement**
 
 **Document ID:** GXO-ENG-PLAN-P4
 **Version:** 1.0
 **Date:** 2025-07-10
 **Status:** Approved for Execution
-
-## **Phase 4: The Critical Path - REST API & ETL Enablement**
 
 ### **Objective**
 
@@ -709,151 +576,320 @@ While the full GXO Standard Library is extensive, a small subset of modules enab
 
 ### **Milestone 4.1: Foundational System Primitives (Layer 1)**
 
-**Objective:** Implement the core modules for interacting with the local system and controlling workflow logic. These are prerequisites for almost any real-world playbook.
+**Objective:** Implement the core modules for interacting with the local system and controlling workflow logic.
+**Impacted Files:**
+*   `modules/exec/exec.go`
+*   New Directory: `modules/filesystem/`
+*   New Directory: `modules/control/`
 
-**Rationale:** These modules provide the basic building blocks for file manipulation and logical control that are essential for setting up test conditions, managing temporary data, and creating dynamic, conditional workflows.
+*   **Module API: `exec`**
+    *   **Synopsis:** Executes local system commands.
+    *   **Parameters:** `command` (string, required), `args` (list[string]), `environment` (list[string]).
+    *   **Summary:** `{ "stdout": string, "stderr": string, "exit_code": int }`.
 
-**Impacted Files & Detailed Changes:**
-
-*   **New Directory: `modules/exec/`**
-    *   **Action:** Create `modules/exec/exec.go`.
-    *   **Module:** `exec`
-    *   **Implementation Detail:** The `Perform` method must use the `internal/command.Runner` abstraction. It must check the context for the `DryRunKey`. The summary it returns must be a map: `{ "stdout": string, "stderr": string, "exit_code": int }`.
-
-*   **New Directory: `modules/filesystem/`**
-    *   **Action:** Create the files for the `filesystem` module suite: `read.go`, `write.go`, `stat.go`, `list.go`, `manage.go`. Each will contain a separate module struct.
-    *   **Modules:** `filesystem:read`, `filesystem:write`, `filesystem:stat`, `filesystem:list`, `filesystem:manage`.
-    *   **Implementation Detail:** All path-based operations **MUST** resolve paths relative to the `Workspace` to prevent path traversal. The `filesystem:list` module must be implemented as a streaming producer, emitting one record for each file/directory found. The `filesystem:manage` module must be idempotent.
-
-*   **New Directory: `modules/control/`**
-    *   **Action:** Create the files for the `control` module suite: `assert.go`, `identity.go`, `barrier.go`.
-    *   **Modules:** `control:assert`, `control:identity`, `control:barrier`.
-    *   **Implementation Detail:** The `control:barrier` is a streaming-only module. Its `Perform` method should use a `sync.WaitGroup` to wait for all channels in its `stream_inputs` to be closed. It does not need to read any records from the channels.
+*   **Module API: `filesystem:manage`**
+    *   **Synopsis:** Idempotently manages the state of files and directories.
+    *   **Parameters:** `path` (string, required), `state` (string, required, choices: `present`, `absent`, `directory`), `mode` (string), `owner` (string), `group` (string), `recursive` (bool).
+    *   **Summary:** `{ "path": string, "state": string, "changed": bool }`.
 
 ---
 
 ### **Milestone 4.2: REST API Client (Layer 5)**
 
-**Objective:** Implement the universal HTTP client. This is the single most important module for external system integration.
+**Objective:** Implement the universal HTTP client.
+**Impacted Files:** `modules/http/request.go`
 
-**Rationale:** The vast majority of modern automation involves interacting with REST APIs. A powerful, convenient, and robust `http:request` module is the gateway to integrating GXO with virtually any other platform or service.
-
-**Impacted Files & Detailed Changes:**
-
-*   **New Directory: `modules/http/`**
-    *   **Action:** Create `modules/http/request.go`.
-    *   **Module:** `http:request`
-    *   **Implementation Detail:**
-        1.  This module will use Go's standard `net/http` client. It should manage a client instance that can be reused for performance (e.g., keep-alives).
-        2.  It must handle all major HTTP methods (GET, POST, PUT, DELETE, PATCH, etc.).
-        3.  It needs to support setting custom headers, request bodies (as a string), and URL query parameters.
-        4.  It must include a `skip_tls_verify` parameter for test environments, but log a prominent security warning if it is used.
-        5.  The `summary` it returns must be a rich map: `{ "status_code": int, "headers": map, "body": string, "json_body": any, "latency_ms": int }`.
-        6.  The implementation should automatically attempt to parse the response body as JSON if the `Content-Type` header is `application/json`, populating the `json_body` field. This is a significant quality-of-life feature.
-
----
-
-### **Milestone 4.3: Core Data Plane (Layer 4)**
-
-**Objective:** Implement the essential ETL modules needed to process data from the `http:request` module's responses.
-
-**Rationale:** Getting data from an API is only half the battle. The other half is parsing, transforming, and filtering that data to extract the specific information needed for subsequent steps. These modules provide that capability.
-
-**Impacted Files & Detailed Changes:**
-
-*   **New Directory: `modules/data/`**
-    *   **Action:** Create the initial set of data plane modules: `parse.go`, `map.go`, `filter.go`.
-    *   **Module: `data:parse`**
-        *   **Implementation Detail:** The initial version needs to support `format: "json"` and `format: "text_lines"`. For JSON, it will use `json.Unmarshal` to parse the `content` into a Go `[]interface{}` or `map[string]interface{}` and then emit each element/value as a separate record on its output stream. For `text_lines`, it will split the `content` by newlines and emit each line as a record: `{ "line": "..." }`.
-    *   **Module: `data:map`**
-        *   **Implementation Detail:** This module's `Perform` method will iterate over its input stream. For each record, it will execute a Go template provided in its `template` parameter. The result of the template execution will be the new record emitted on its output stream.
-    *   **Module: `data:filter`**
-        *   **Implementation Detail:** This module will also iterate over its input stream. It will execute a Go template from its `condition` parameter for each record. If the template's output evaluates to "truthy," the original, unmodified record is passed through to the output stream. Otherwise, it is discarded.
+*   **Module API: `http:request`**
+    *   **Synopsis:** The universal, all-in-one client for any HTTP-based API.
+    *   **Parameters:**
+        | Name | Type | Required? | Description |
+        |---|---|---|---|
+        | `url` | string | Yes | The URL of the endpoint to request. |
+        | `method` | string | No | HTTP method (GET, POST, etc.). Defaults to `GET`. |
+        | `headers` | map | No | A map of request headers. |
+        | `body` | string | No | The request body. |
+        | `timeout` | string | No | Request timeout (e.g., "10s"). |
+        | `skip_tls_verify` | bool | No | If true, skips TLS certificate verification. |
+        | `auth` | map | No | A map specifying authentication, e.g., `{ "basic": { "user": "u", "pass": "p" } }`. |
+    *   **Summary:** `{ "status_code": int, "headers": map, "body": string, "json_body": any, "latency_ms": int }`.
 
 ---
 
-# **GXO Master Engineering Plan: Phase 5**
+### **Milestone 4.3: Core Data Plane & Module Alignment (Layer 4)**
+
+**Objective:** Implement essential ETL modules and align existing module names with the canonical GXO-SL specification.
+**Impacted Files:** `modules/data/` directory.
+
+*   **Module API: `data:parse`**
+    *   **Synopsis:** Converts raw data into a stream of structured records.
+    *   **Parameters:** `content` (string, required), `format` (string, required, choices: `json`, `text_lines`).
+    *   **Output Stream:** A stream of `map[string]interface{}` records.
+
+*   **Module API: `data:map`**
+    *   **Synopsis:** Transforms each record in a stream using a template.
+    *   **Parameters:** `template` (string, required).
+    *   **Stream Behavior:** Consumes one stream, produces one stream.
+
+*   **Action: Module Renaming**
+    *   Execute `git mv internal/modules/generate/from_list internal/modules/data/generate_from_list`. Update registration name to `data:generate_from_list`.
+    *   Execute `git mv internal/modules/stream/join internal/modules/data/join`. Update registration name to `data:join`.
+    *   Update all internal references, tests, and documentation.
+
+---
+
+## **Phase 5: Expanding the Core Standard Library**
 
 **Document ID:** GXO-ENG-PLAN-P5
 **Version:** 1.0
-**Date:** 2025-07-10
+**Date:** 2025-07-11
 **Status:** Approved for Execution
-
-## **Phase 5: Completing the Vision - Full Standard Library**
 
 ### **Objective**
 
-With the critical path for API and ETL workflows delivered, this phase focuses on expanding GXO's capabilities to cover the full spectrum of automation tasks by implementing the remainder of the GXO-SL. This will round out the platform, enabling low-level network automation, server-side implementations, advanced data processing, and seamless integration with key ecosystem tools like Terraform and artifact repositories.
+With the critical path for `run_once` workflows delivered, this phase focuses on expanding GXO's capabilities to cover a wider spectrum of automation tasks by implementing the next set of modules from the GXO-SL. The development is prioritized by layer, building upon already-completed primitives.
 
 ### **Rationale**
 
-A rich "batteries-included" standard library is what transforms a powerful engine into a productive and versatile platform. Implementing the full GXO-SL demonstrates the robustness of the underlying GXO-AM (Automation Model) and provides users with a comprehensive, first-party toolkit for nearly any automation challenge, reinforcing the value proposition of GXO as a unified runtime. The development is sequenced by layer, building upon already-completed primitives.
+A rich "batteries-included" standard library is what transforms a powerful engine into a productive and versatile platform. Implementing this set of modules demonstrates the robustness of the underlying GXO Automation Model and provides users with a comprehensive, first-party toolkit for a wide array of automation challenges.
 
 ---
 
 ### **Milestone 5.1: The Network Stack (Layers 2 & 3)**
 
-**Objective:** Enable low-level network automation and allow users to build custom GXO-native network services.
-
-**Rationale:** Direct socket and protocol-level control is a key differentiator for GXO, allowing it to move beyond simple task execution and into the realm of network testing, security monitoring, and custom service implementation, as demonstrated by the declarative KV-server example.
-
-**Impacted Files & Detailed Changes:**
-
+*   **Objective:** Enable low-level network automation and allow users to build custom GXO-native network services.
+*   **New Directory: `internal/connections`**
+    *   **`manager.go`:** Create a new `ConnectionManager` service within the GXO Kernel. It will use a `sync.Map` to hold open `net.Conn` objects, keyed by a UUID `connection_id`.
 *   **New Directory: `modules/connection/`**
-    *   **Action:** Create the full suite of connection-level modules: `open.go`, `listen.go`, `read.go`, `write.go`, `close.go`.
-    *   **Modules:** `connection:open`, `connection:listen`, `connection:read`, `connection:write`, `connection:close`.
-    *   **Implementation Detail:** These modules will interact with a new `internal/connections` manager service within the GXO Kernel. This service will be responsible for holding open socket connections and mapping them to the opaque `connection_id` handles that are passed between workloads. The `connection:listen` module is a streaming producer that will emit connection handles. The other modules will take a `connection_id` as a parameter to operate on the correct socket.
-
-*   **`modules/http/`**
-    *   **Action:** Create `modules/http/listen.go` and `modules/http/respond.go`.
-    *   **Modules:** `http:listen`, `http:respond`.
-    *   **Implementation Detail:** The `http:listen` module will be a streaming consumer that takes its `stream_input` from a `connection:listen` workload. It will parse the raw byte stream from the connection according to the HTTP/1.1 spec and produce a stream of `request_id` handles. The `http:respond` module will take a `request_id` to send a response back on the correct connection.
-
-*   **New Directory: `modules/ssh/`**
-    *   **Action:** Create the full suite of SSH modules.
-    *   **Modules:** `ssh:connect`, `ssh:command`, `ssh:script`.
-    *   **Implementation Detail:** This suite will be built on top of Go's standard `crypto/ssh` library. `ssh:connect` will establish a persistent connection and return a handle, similar to the `connection` suite.
-
----
+    *   **`listen.go`:** `connection:listen` module. Its `Perform` method will start a `net.Listener` in a goroutine. On `Accept()`, it will store the `net.Conn` in the `ConnectionManager` and emit a record with the `{ "connection_id": "..." }` on its output stream.
+    *   Other modules (`open`, `read`, `write`, `close`) will take a `connection_id` parameter, look up the `net.Conn` in the `ConnectionManager`, and perform the corresponding I/O operation.
+*   **`modules/http/listen.go` & `respond.go`:** The `http:listen` module will consume the stream from `connection:listen`, parse HTTP requests, and produce a stream of `{ "request_id": "..." }` handles. `http:respond` will use this handle to reply.
+*   **New Directory: `modules/ssh/`:** Implement `ssh:connect`, `ssh:command`, `ssh:script` using the standard `crypto/ssh` library.
 
 ### **Milestone 5.2: Advanced Data Plane & Application Modules (Layers 4 & 5)**
 
-**Objective:** Complete the Data Plane to enable advanced ETL and add clients for common data services.
-
-**Rationale:** While the critical path covers basic data processing, advanced use cases require more powerful tools like joining disparate data sources and performing stateful aggregations. This milestone delivers those capabilities.
-
-**Impacted Files & Detailed Changes:**
-
-*   **`modules/data/`**
-    *   **Action:** Create `modules/data/join.go` and `modules/data/aggregate.go`.
-    *   **Module: `data:join`**
-        *   **Implementation Detail:** This module will implement a two-phase in-memory hash join. It will read all records from its "build" side stream(s) into a hash map keyed by the join field. Then, it will read the "probe" side stream and look up matches in the hash map, emitting joined records. It must support `inner`, `left`, `right`, and `outer` join types.
-    *   **Module: `data:aggregate`**
-        *   **Implementation Detail:** This is a stateful streaming module. It will maintain internal state (e.g., counts, sums) for different groups of records. It will use timers (for `window` mode) or counters (for `count` mode) to know when to flush an aggregate group to its output stream and reset the state for that group.
-
-*   **New Directory: `modules/database/`**
-    *   **Action:** Create `modules/database/query.go`.
-    *   **Module:** `database:query`.
-    *   **Implementation Detail:** This module will use Go's standard `database/sql` package. It will take connection parameters (or a reference to a configured profile) and a SQL query. For `SELECT` statements, it must be a streaming producer, iterating over `sql.Rows` and emitting one GXO record per row. For other statements (`INSERT`, `UPDATE`), it should return a summary with `{ "rows_affected": int }`.
-
----
+*   **Objective:** Enhance ETL capabilities and add clients for common services.
+*   **`modules/data/aggregate.go`:** Implement `data:aggregate`. This will be a stateful streaming module. Its `Perform` method will maintain an internal map to store aggregate state (e.g., counts, sums). It will use `time.Ticker` for windowed aggregation or a simple counter for count-based aggregation to flush results.
+*   **`modules/database/query.go`:** Implement `database:query`. It will use Go's standard `database/sql` package. For `SELECT` queries, its `Perform` method will use a `for rows.Next()` loop to iterate over the result set and send each row as a record on its output stream.
 
 ### **Milestone 5.3: The Integration Layer (Layer 6)**
 
-**Objective:** Provide opinionated, high-level wrappers for key ecosystem tools to create a seamless, "better together" experience for common DevOps and GitOps workflows.
+*   **Objective:** Provide opinionated, high-level wrappers for key ecosystem tools.
+*   **New Directory: `modules/object_storage/`:** First, implement a generic Layer 5 `object_storage` suite (`get_object`, `put_object`) for S3-compatible APIs.
+*   **`modules/artifact/upload.go`:** The `artifact:upload` module will use `object_storage:put_object`. It will compute a file checksum, upload the file, and return a structured **Artifact Handle** (a map with name, version, checksum, remote location) in its `summary`.
+*   **`modules/terraform/run.go`:** The `terraform:run` module will be a wrapper around the `exec` module. After a successful `terraform apply`, its `Perform` method will execute a second command, `terraform output -json`, parse the output, and return the structured data in its `summary`.
 
-**Rationale:** While users *could* interact with tools like Terraform or Artifactory using the `exec` and `http:request` modules, providing dedicated, intelligent wrappers greatly improves the user experience, reduces boilerplate, and allows GXO to handle complex state-passing automatically.
+---
 
-**Impacted Files & Detailed Changes:**
+## **Phase 6: Production Hardening & Service Enablement**
 
-*   **New Directory: `modules/artifact/`**
-    *   **Action:** Create `modules/artifact/upload.go` and `modules/artifact/download.go`. This suite depends on an underlying `object_storage` module.
-    *   **Modules:** `artifact:upload`, `artifact:download`.
-    *   **Implementation Detail:** First, a generic `object_storage` suite (L5) must be built to interact with S3-compatible APIs. The `artifact:upload` module will then use this primitive. It will take a local path from the `Workspace` and a logical name (e.g., `my-app:v1.2.3`). It will compute a checksum, upload the file using `object_storage:put_object`, and return a structured **Artifact Handle** (a map containing the logical name, version, checksum, and remote location) as its `summary`. The `artifact:download` module will take this Handle as a parameter and use `object_storage:get_object` to retrieve the file into the current `Workspace`.
+**Document ID:** GXO-ENG-PLAN-P6
+**Version:** 1.0
+**Date:** 2025-07-12
+**Status:** Approved for Execution
 
-*   **New Directory: `modules/terraform/`**
-    *   **Action:** Create `modules/terraform/run.go`.
-    *   **Module:** `terraform:run`.
-    *   **Implementation Detail:** This module is an intelligent wrapper around the `exec` module. It will execute `terraform apply`, `plan`, etc. Its key feature is that after a successful `apply`, it will automatically run `terraform output -json` in the same directory, parse the resulting JSON, and return it as a structured map in its `summary`. This directly solves the state-passing problem between Terraform and subsequent configuration steps.
+### **Objective**
 
+Implement the `gxo daemon`, transforming GXO from an ephemeral task runner into a true, long-running Automation Kernel. This phase focuses on the non-negotiable features required for production deployments: a persistent state store, a secure control plane, and the ability to manage supervised and event-driven workloads.
 
+### **Rationale**
+
+The architectural vision of GXO as a unified runtime for services, events, and tasks can only be realized through a persistent, long-running daemon process. This phase builds that daemon, its secure control plane, and the core lifecycle reconcilers, unlocking the platform's most powerful capabilities and preparing it for production use.
+
+---
+
+### **Milestone 6.1: The `gxo daemon` and Lifecycle Supervisor**
+
+*   **Objective:** Implement the core `gxo daemon` process and the `supervise` and `event_driven` lifecycle reconcilers.
+*   **New Files & Detailed Changes:**
+    *   **New File: `api/v1/daemon.proto`:** Define the gRPC service.
+        ```protobuf
+        syntax = "proto3";
+        package gxo.daemon.v1;
+        
+        service GxoDaemon {
+          rpc ApplyPlaybook(ApplyRequest) returns (ApplyResponse);
+          rpc GetWorkloadStatus(StatusRequest) returns (StatusResponse);
+          rpc ResumeWorkflow(ResumeRequest) returns (ResumeResponse);
+        }
+        // ... define message types ...
+        ```
+    *   **New File: `cmd/gxo/daemon.go`:** Create the `gxo daemon` Cobra command. It initializes the engine, starts the gRPC server, and enters the main reconciliation loop.
+    *   **New File: `internal/daemon/reconciler.go`:** Implement the `supervise` reconciler.
+        ```go
+        // Simplified logic for supervise reconciler loop
+        func (r *Reconciler) runSuperviseLoop(ctx context.Context, workload *config.Workload) {
+            for {
+                select { case <-ctx.Done(): return }
+                
+                _, err := r.engine.RunWorkload(ctx, workload) // New engine method
+                if err == nil {
+                    // Handle case where supervised process exits cleanly
+                }
+                
+                // Implement exponential backoff for restarts
+                delay := calculateBackoff(...) 
+                time.Sleep(delay)
+            }
+        }
+        ```
+    *   **New Directory: `cmd/gxo-ctl/`:** Create the `gxo-ctl` CLI binary.
+
+### **Milestone 6.2: Control Plane Security (mTLS & RBAC)**
+
+*   **Objective:** Secure the `gxo daemon`'s gRPC control plane according to the security architecture.
+*   **Impacted Files & Detailed Changes:**
+    *   **`internal/daemon/server.go`:**
+        *   **mTLS Integration:** Modify gRPC server initialization.
+            ```go
+            // Load server cert and key, and client CA
+            tlsConfig := &tls.Config{
+                Certificates: []tls.Certificate{serverCert},
+                ClientCAs:    clientCAs,
+                ClientAuth:   tls.RequireAndVerifyClientCert,
+            }
+            serverOptions := []grpc.ServerOption{grpc.Creds(credentials.NewTLS(tlsConfig))}
+            grpcServer := grpc.NewServer(serverOptions...)
+            ```
+    *   **New File: `internal/daemon/interceptor/auth.go`:**
+        *   **Action:** Create a unary gRPC interceptor for authorization.
+        *   **RBAC Logic:**
+            ```go
+            func (i *AuthInterceptor) Authorize(ctx context.Context, ...) (interface{}, error) {
+                p, ok := peer.FromContext(ctx)
+                if !ok { return nil, status.Error(codes.Unauthenticated, "no peer found") }
+                
+                tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo)
+                // ... extract client cert subject CN ...
+                
+                role := i.rbacPolicy.GetRole(clientCN)
+                if !role.CanAccess(method) {
+                    return nil, status.Error(codes.PermissionDenied, "access denied")
+                }
+                return handler(ctx, req)
+            }
+            ```
+
+### **Milestone 6.3: Persistent & Encrypted State Store**
+
+*   **Objective:** Replace the in-memory state store with a persistent, production-grade alternative.
+*   **New Files & Detailed Changes:**
+    *   **New Directory: `internal/state/boltdb/`**
+    *   **`store.go`:** Implement the `state.Store` interface using BoltDB.
+        ```go
+        func (s *BoltStore) Set(key string, value interface{}) error {
+            return s.db.Update(func(tx *bolt.Tx) error {
+                b := tx.Bucket([]byte(s.bucketName))
+                // Serialize value to bytes (e.g., JSON)
+                // Encrypt bytes using AEAD cipher
+                // return b.Put([]byte(key), encryptedBytes)
+            })
+        }
+        ```
+    *   **`encryption.go`:** Implement AEAD (AES-GCM) encryption/decryption helpers.
+    *   **New Directory: `cmd/gxo-admin/`**
+        *   **`rekey.go`:** Create the `gxo-admin rekey-state` command for offline state re-encryption.
+
+### **Milestone 6.4: Human-in-the-Loop (`Resume Context`)**
+
+*   **Objective:** Implement the `Resume Context` primitive to enable human-in-the-loop workflows.
+*   **New Files & Detailed Changes:**
+    *   **`modules/control/wait_for_signal.go`:** Implement `control:wait_for_signal`. Its `Perform` method will return a special, sentinel error.
+    *   **`internal/daemon/reconciler.go`:** When the "pause" sentinel error is received, the reconciler will generate a unique token and store it and the workflow's state in BoltDB.
+    *   **`internal/daemon/server.go`:** Add a `Resume(token, payload)` RPC. It will find the workflow, merge the `payload` into its state under `_gxo.resume_payload`, and signal the reconciler to continue.
+    *   **`cmd/gxo-ctl/resume.go`:** Add the `gxo-ctl resume --token <token> --payload '{...}'` command.
+
+---
+
+## **Phase 7: Advanced Workload & Supply Chain Security**
+
+**Document ID:** GXO-ENG-PLAN-P7
+**Version:** 1.0
+**Date:** 2025-07-13
+**Status:** Approved for Execution
+
+### **Objective**
+
+With the daemon and its control plane secured, this phase focuses on hardening the execution environment of the workloads themselves and securing the supply chain of the modules they use.
+
+### **Rationale**
+
+A secure platform requires defense in depth. While Phase 6 secured the "front door," this phase builds the "internal walls" by isolating workloads from each other and the host system. It also secures the "supply chain" by ensuring that only trusted, verified modules can be executed, preventing the introduction of malicious code into the platform.
+
+---
+
+### **Milestone 7.1: Workload Sandboxing (`security_context`)**
+
+*   **Objective:** Implement OS-level sandboxing for workloads as defined in the `security_context` configuration block.
+*   **Impacted Files & Detailed Changes:**
+    *   **`internal/config/config.go`:** Add a `SecurityContext` struct to the `Workload` definition.
+    *   **`internal/engine/workload_runner.go`:**
+        *   **Action:** Refactor `executeSingleWorkloadInstance`. Before invoking a module, check for a `SecurityContext`.
+        *   **Implementation Detail:**
+            ```go
+            // In executeSingleWorkloadInstance, before calling module.Perform
+            if workload.SecurityContext != nil {
+                // This is a simplified representation. The actual implementation is complex.
+                // It requires a re-entrant binary or a fork/exec model.
+                cmd := exec.Command(os.Args[0], "internal-exec-sandboxed", workload.ID)
+                cmd.SysProcAttr = &syscall.SysProcAttr{
+                    Cloneflags: syscall.CLONE_NEWNS | syscall.CLONE_NEWPID | ...,
+                }
+                // ... setup cgroups, seccomp, pipes for stdin/stdout ...
+                // The main `gxo` binary needs a new internal command `internal-exec-sandboxed`
+                // that re-initializes just enough to run the single workload.
+                err := cmd.Run()
+                // ... handle results ...
+                return summary, err
+            }
+            // ... existing module.Perform call ...
+            ```
+
+### **Milestone 7.2: Module Signing & Verification**
+
+*   **Objective:** Implement supply chain security by verifying the cryptographic signatures of modules before execution.
+*   **New Files & Detailed Changes:**
+    *   **New File: `cmd/gxo-admin/sign.go`:** Create a `gxo-admin sign-module` command using `cosign` libraries to sign module digests.
+    *   **`internal/module/registry.go`:**
+        *   **Action:** Enhance the `Get` method of the daemon's `Registry`.
+        *   **Implementation Detail:** `Get` will now locate the module's signature, verify it against trusted public keys configured in the daemon, and return a `ModuleSignatureError` if verification fails.
+
+---
+
+## **Phase 8: Complete the Full GXO Standard Library**
+
+**Document ID:** GXO-ENG-PLAN-P8
+**Version:** 1.0
+**Date:** 2025-07-14
+**Status:** Approved for Execution
+
+### **Objective**
+
+With a secure, production-ready kernel, this final phase focuses on implementing the full suite of modules defined in the GXO-SL, unlocking the platform's complete range of capabilities for cloud, container, and cryptographic automation.
+
+### **Rationale**
+
+The final set of standard library modules provides high-value, out-of-the-box integrations that solve common and complex automation problems. Completing the GXO-SL fulfills the promise of a "batteries-included" platform and provides the key building blocks for advanced use cases in modern cloud-native environments.
+
+---
+
+### **Milestone 8.1: Advanced Protocol & Crypto Modules**
+
+*   **Objective:** Implement modules for DNS, advanced SSH, and core cryptographic functions.
+*   **Modules & APIs:**
+    *   **`dns:query`:** Params: `name` (string, req), `type` (string). Summary: `{ "answers": []string }`.
+    *   **`ssh:upload`:** Params: `connection_id` (string, req), `source` (string, req), `destination` (string, req).
+    *   **`crypto:generate_key`:** Params: `type` (string, req, choices: `rsa`, `ed25519`), `bits` (int). Summary: `{ "public_key": string, "private_key": string }`.
+
+### **Milestone 8.2: Container & Vault Integration**
+
+*   **Objective:** Provide first-class integration with Docker/containers and HashiCorp Vault.
+*   **Modules & APIs:**
+    *   **`docker:build`:** Params: `path` (string, req), `tag` (string, req), `build_args` (map). Summary: `{ "image_id": string, "tags": []string }`.
+    *   **`vault:read`:** Params: `path` (string, req). Summary: `{ "data": map }`.
+
+### **Milestone 8.3: High-Level Cloud Service Wrappers**
+
+*   **Objective:** Implement opinionated, high-level wrappers for common cloud operations.
+*   **Modules & APIs:**
+    *   **`aws:s3_sync`:** Params: `source` (string, req), `bucket` (string, req), `prefix` (string), `delete` (bool).
+    *   **`aws:ec2_instance`:** Params: `name` (string, req), `state` (string, req, choices: `present`, `absent`, `running`, `stopped`), `instance_type` (string), `ami` (string). Summary: `{ "instance_id": string, "public_ip": string, "private_ip": string, "state": string }`.
