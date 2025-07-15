@@ -57,29 +57,32 @@ GXO's power is made accessible through its layered module system, the GXO Automa
 ```
           THE GXO AUTOMATION MODEL (GXO-AM)
           ┌──────────────────────────────────┐
- L6 ▲     │         Integration Layer        │  Wrappers for ecosystem tools
+ L7 ▲     │      Composition / Business      │  Custom modules encapsulating
+ │        │           Logic Layer            │  organization-specific workflows
+ │        ├──────────────────────────────────┤
+ L6       │         Integration Layer        │  Wrappers for ecosystem tools
  │        │ (terraform:run, artifact:*)      │  (The "Better Together" Experience)
  │        ├──────────────────────────────────┤
- │        │         Application Layer        │  High-level service clients
+ L5       │         Application Layer        │  High-level service clients
  │        │ (http:request, database:query)   │  (Convenience & Abstraction)
  │        ├──────────────────────────────────┤
- │        │            Data Plane            │  Streaming ETL and Transformation
+ L4       │            Data Plane            │  Streaming ETL and Transformation
  │        │ (data:map, data:filter, data:join) │  (The "Presentation Layer")
  │        ├──────────────────────────────────┤
- │        │          Protocol Layer          │  Structured protocol logic
+ L3       │          Protocol Layer          │  Structured protocol logic
  │        │   (http:listen, ssh:connect)     │  (The "Rules of the Road")
  │        ├──────────────────────────────────┤
- │        │         Connection Layer         │  Raw network socket management
+ L2       │         Connection Layer         │  Raw network socket management
  │        │  (connection:listen, open, ...)  │  (The "Physical Wires & Ports")
  │        ├──────────────────────────────────┤
- │        │           System Layer           │  Direct OS and process control
+ L1       │           System Layer           │  Direct OS and process control
  │        │    (exec, filesystem:*, ...)     │  (The "Bare Metal" of Automation)
  │        ├──────────────────────────────────┤
  L0 ▼     │          GXO KERNEL              │  Scheduling, State, Streams, Security
           └──────────────────────────────────┘
 ```
 
-> **The GXO-AM Philosophy:** *Only use the layers you need. Compose powerful solutions upwards from simple primitives. No glue code required.*
+> **The GXO Philosophy:** The GXO Standard Library provides the complete, general-purpose toolkit for *how* to perform automation (Layers 1-6). Layer 7, the Business Logic Layer, is where you compose these primitives, either in a playbook or by building your own high-level, custom modules—to solve your specific problems and define the "why" of your automation.
 
 This model is not just a theoretical framework; it's the reason GXO can solve problems that are impossible for other tools to handle natively.
 
