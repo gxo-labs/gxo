@@ -119,6 +119,61 @@ The scope of this roadmap is the single-node **GXO Automation Kernel**. Advanced
 
 ---
 
+---
+
+### **Roadmap to a Minimally Viable Kernel (MVK)**
+
+After completing **Phases 1, 2, and 3**, the GXO project will have a secure, persistent, refactored daemon capable of supervising workloads. The following new phase, **Phase 4 (MVK Enablement)**, is the critical next step. It cherry-picks the absolute essential features from the original roadmap (Phases 4, 6, and 7) needed to satisfy the six-point Automation Kernel definition and provide compelling demos.
+
+---
+
+### **Phase 4 (MVK): Core Kernel Capabilities & Demonstrations**
+
+**Rationale:** The foundational daemon is complete. This phase focuses on implementing the *minimum set of lifecycles and modules* required to demonstrate every one of the six Automation Kernel responsibilities defined in the architecture. This provides a powerful, coherent, and demonstrable MVK release that proves the core architectural claims, enabling you to write articles and showcase the project's unique value.
+
+#### **Milestone 4.1: Enable Reactive Workflows**
+*   **Objective:** Implement the `event_driven` lifecycle and the minimal network modules required to trigger it. This directly demonstrates **#1. Workload Management (Reactive)** and **#5. Native Inter-Workload Communication (Streaming)**.
+*   **Key Features & Modules:**
+    1.  **Implement `event_driven` Reconciler:** Create the `internal/daemon/reconciler_event.go` to subscribe to event streams and spawn ephemeral workflow instances.
+    2.  **Implement `connection:listen` Module:** A `supervised` `connection:listen` workload will act as the event source, producing a stream of connection handles.
+    3.  **Implement `connection:read`, `connection:write`, `connection:close` Modules:** These are necessary to build a simple but complete `event_driven` workflow that can interact with the connection handle.
+    4.  **Implement `data:map` Module:** This is the essential data transformation module needed to parse an incoming request (e.g., from `connection:read`) and create a structured response.
+
+*   **Demonstrable Outcome:** You can now write a complete, declarative TCP "echo" server in a single YAML file, perfectly showcasing the power of composing GXO-AM layers (L2 `connection:*` and L4 `data:map`) with different lifecycles (`supervise` and `event_driven`). This is a powerful story.
+
+#### **Milestone 4.2: Implement Foundational Primitives & Control Flow**
+*   **Objective:** Implement the most basic Layer 1 modules to demonstrate **#4. A Native Module System** and provide basic workflow control.
+*   **Key Features & Modules:**
+    1.  **Implement `exec` Module:** This is the fundamental "system call" of the kernel, allowing interaction with the host OS.
+    2.  **Implement `control:identity` Module:** A simple but vital module for structuring data in the state store, demonstrating **#2. State Management & Isolation**.
+    3.  **Implement `filesystem:write` Module (or similar):** This demonstrates **#3. Workspace & Artifact Management** by showing that a workload can write a file to its ephemeral, isolated `Workspace`.
+
+*   **Demonstrable Outcome:** You can build a simple CI/CD-style pipeline: one workload runs a command with `exec`, registers its output, and a second workload uses `filesystem:write` to write that output to a file, all within a temporary `Workspace`.
+
+#### **Milestone 4.3: Implement Foundational Security Context**
+*   **Objective:** Implement the most critical workload sandboxing feature to demonstrate **#6. Security & Resource Protection**.
+*   **Key Features & Modules:**
+    1.  **Implement `security_context` for `seccomp`:** Add support for applying a restrictive `seccomp` profile to a workload. This is often the most impactful and easiest to demonstrate sandboxing feature.
+    2.  **Provide a `default-minimal` profile:** Ship a safe default profile that allows basic I/O but blocks dangerous syscalls.
+    3.  **Enhance `WorkloadRunner`:** Implement the logic to apply the `seccomp` filter before invoking the module's `Perform` method.
+
+*   **Demonstrable Outcome:** You can show two identical `exec` workloads, one with the default `security_context` and one without. The sandboxed workload will fail if it attempts a forbidden system call (e.g., `unshare`), while the other succeeds, visually proving the kernel's ability to enforce security boundaries.
+
+---
+
+### **Summary of MVK Capabilities**
+
+By completing this revised Phase 4, the GXO Kernel will possess:
+
+*   **All core lifecycles:** `run_once`, `supervise`, and `event_driven`.
+*   **A secure, persistent daemon** with an mTLS control plane.
+*   **A minimal but sufficient module library** (`exec`, `filesystem:write`, `connection:*`, `data:map`, `control:identity`) to build compelling, end-to-end demonstrations.
+*   **A tangible security feature** (`seccomp` sandboxing) to back up security claims.
+
+This MVK is a complete and self-contained platform that fully embodies the six principles of the Automation Kernel. You can confidently write articles and create demos based on this feature set, while continuing to build out the broader module library (from the original Phases 5, 6, and 7) in parallel or afterward.
+
+---
+
 # **GXO Master Engineering Plan: Phase 1**
 
 **Document ID:** GXO-ENG-PLAN-P1
