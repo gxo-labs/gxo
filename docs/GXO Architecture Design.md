@@ -1,8 +1,8 @@
 # GXO Master Architecture & Design Specification
 
-**Document ID:** GXO-ARCH-MASTER
-**Version:** 1.0
-**Status:** Canonical Technical Blueprint
+**Document ID:** GXO-ARCH-MASTER 
+**Version:** 1.0 
+**Status:** Technical Blueprint 
 
 ## Abstract
 
@@ -20,12 +20,12 @@ The GXO Kernel is designed from first principles to be a true **Automation Kerne
 
 1.  **Workload Management & Scheduling**
     The Kernel is fundamentally responsible for managing the execution lifecycle of its primary schedulable entity, the `Workload`. It achieves this through a unified scheduler that understands diverse execution policies declared via a `Workload`'s `Lifecycle`. This includes:
-    *   **Ephemeral Tasks (`run_once`):** Constructing and executing a Directed Acyclic Graph (DAG) based on implicit state and explicit stream dependencies. **Task readiness is resolved via the kernel’s channel and dependency resolution logic, ensuring that execution only begins when all declared inputs are satisfied or reachable.**
+    *   **Ephemeral Tasks (`run_once`):** Constructing and executing a Directed Acyclic Graph (DAG) based on implicit state and explicit stream dependencies. Task readiness is resolved via the kernel’s channel and dependency resolution logic, ensuring that execution only begins when all declared inputs are satisfied or reachable.
     *   **Long-Running Services (`supervise`):** Actively monitoring and restarting processes based on configurable policies to ensure high availability.
     *   **Reactive Handlers (`event_driven` & `scheduled`):** Instantiating workflow instances in response to internal stream events or time-based triggers.
 
 2.  **State Management & Isolation**
-    The Kernel provides a central, persistent, and concurrency-safe state store that serves as the "memory" for all workflows. Critically, it provides strong programmatic isolation between `Workloads`. By default, the `StatePolicy` dictates that all reads from the state store return a **deep copy** of the requested data. This is the direct analog of an OS kernel's virtual memory, preventing a misbehaving `Workload` from mutating shared state and causing non-deterministic failures in others. **State copies are enforced by default but may be policy-tuned to balance safety and performance for trusted, high-throughput workloads.**
+    The Kernel provides a central, persistent, and concurrency-safe state store that serves as the "memory" for all workflows. Critically, it provides strong programmatic isolation between `Workloads`. By default, the `StatePolicy` dictates that all reads from the state store return a **deep copy** of the requested data. This is the direct analog of an OS kernel's virtual memory, preventing a misbehaving `Workload` from mutating shared state and causing non-deterministic failures in others. State copies are enforced by default but may be policy-tuned to balance safety and performance for trusted, high-throughput workloads.
 
 3.  **Workspace & Artifact Management**
     The Kernel abstracts the host filesystem into a secure, managed, and ephemeral execution environment called the `Workspace`. For each workflow instance, the Kernel creates a unique, isolated directory, performs all actions within it, and guarantees its secure deletion upon completion. This primitive provides a consistent filesystem for all `Workloads` within a run and is protected against path traversal attacks. **Modules interacting with the filesystem write only to their ephemeral Workspace, ensuring artifacts are scoped and traceable to a specific workflow instance.**
@@ -39,7 +39,7 @@ The GXO Kernel is designed from first principles to be a true **Automation Kerne
     *   **Stream-based IPC:** The `stream_inputs` directive creates a native data stream between `Workloads` using efficient, in-memory Go channels managed by the Kernel's `ChannelManager`. **The kernel applies backpressure and buffering to stream channels to ensure memory safety and throughput stability under high load.** This is the direct analog of a Unix pipe, enabling high-throughput data processing.
 
 6.  **Security & Resource Protection**
-    The Kernel is responsible for enforcing security boundaries and protecting the host system. It achieves this by providing a declarative `security_context` that allows a `Workload`'s execution to be sandboxed, giving the operator OS-level control over a `Workload`'s blast radius. **The `security_context` is declared per `Workload` and enforced at runtime, giving granular control over resource and syscall exposure** via:
+    The Kernel is responsible for enforcing security boundaries and protecting the host system. It achieves this by providing a declarative `security_context` that allows a `Workload`'s execution to be sandboxed, giving the operator OS-level control over a `Workload`'s blast radius. The `security_context` is declared per `Workload` and enforced at runtime, giving granular control over resource and syscall exposure via:
     *   **System Call Filtering (`seccomp`)**
     *   **Resource Limiting (`cgroups`)**
     *   **Filesystem, Process, and Network Isolation (Linux namespaces)**
@@ -67,9 +67,9 @@ These are the fundamental, non-module capabilities provided by the `gxo` runtime
 
 A `Workspace` is a sandboxed filesystem context, isolated from the host and scoped to a specific `Workload`'s lifecycle. It is created upon workload instantiation and securely erased after termination, ensuring repeatability and preventing cross-contamination.
 
-*   **Purpose:** The `Workspace` provides a clean and private filesystem to guarantee execution isolation and prevent side effects between concurrent workflows. **Modules interacting with the filesystem write only to their ephemeral Workspace, ensuring artifacts are scoped and traceable to a specific workflow instance.**
+*   **Purpose:** The `Workspace` provides a clean and private filesystem to guarantee execution isolation and prevent side effects between concurrent workflows. Modules interacting with the filesystem write only to their ephemeral Workspace, ensuring artifacts are scoped and traceable to a specific workflow instance.
 
-*   **Lifecycle and Scope:** A unique `Workspace` is created by the Kernel at the beginning of a workflow instance's execution. Every `Workload` within that specific DAG instance automatically executes with this directory as its current working directory. The absolute path to the `Workspace` is made available to all `Workloads` in the DAG via the built-in, read-only state variable `{{ ._gxo.workspace.path }}`. Upon terminal completion of the *entire* DAG, the Kernel **guarantees** the complete and recursive erasure of the `Workspace`.
+*   **Lifecycle and Scope:** A unique `Workspace` is created by the Kernel at the beginning of a workflow instance's execution. Every `Workload` within that specific DAG instance automatically executes with this directory as its current working directory. The absolute path to the `Workspace` is made available to all `Workloads` in the DAG via the built-in, read-only state variable `{{ ._gxo.workspace.path }}`. Upon terminal completion of the *entire* DAG, the Kernel guarantees the complete and recursive erasure of the `Workspace`.
 
 *   **Security & Threat Mitigation:** The `Workspace` is a powerful primitive whose implementation is governed by strict security requirements:
     *   **Threat: Path Traversal.** An attacker could craft a `Workload` with a parameter like `path: ../../etc/passwd`.
@@ -222,10 +222,14 @@ The GXO runtime is hardened at multiple levels to protect the host system and en
 
 *   **Supply Chain Integrity: Module Signature Verification.** To prevent the execution of unauthorized or tampered code, the daemon can be configured with a `fail-closed` policy that requires all modules to have a valid cryptographic signature (e.g., via `cosign`). This ensures that only trusted code, signed by a recognized authority, can be executed by the Kernel.
 
-### **4.3. Data Security: Protecting Information in Motion and at Rest**
+### 4.3. Data Security, Integrity, and Provenance
 
-GXO implements specific controls to protect sensitive data, especially secrets, throughout the automation lifecycle.
+GXO implements specific controls to protect sensitive data throughout the automation lifecycle and to provide a verifiable record of execution.
 
 *   **The "Taint and Redact" System:** This is a critical GXO feature for preventing accidental credential leakage. The Kernel's template engine internally "taints" any value resolved via the `secret` function. This taint is tracked on a per-workload basis. Any attempt to write a tainted value to the state store (via `register`) or log it in an error message will result in the value being automatically replaced with a `[REDACTED_SECRET]` placeholder.
 
 *   **State Encryption at Rest:** For persistent deployments, the `gxo daemon`'s state file (e.g., BoltDB) supports optional, transparent encryption at rest using an AEAD cipher like AES-GCM, protecting all persisted workload state and results on disk.
+
+*   **Module Signature Verification:** To prevent the execution of unauthorized or tampered code, the daemon can be configured with a `fail-closed` policy that requires all modules to have a valid cryptographic signature (e.g., via `cosign`). This ensures that only trusted code, signed by a recognized authority, can be executed by the Kernel.
+
+*   **Verifiable Audit Trail:** Each Workload's lifecycle is tracked in an append-only execution log, including timestamped state transitions, operator-injected payloads (via Resume Context), and the precise module version executed. This provides a verifiable audit chain for regulatory environments.
