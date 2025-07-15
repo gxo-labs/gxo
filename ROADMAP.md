@@ -119,8 +119,6 @@ The scope of this roadmap is the single-node **GXO Automation Kernel**. Advanced
 
 ---
 
----
-
 ### **Roadmap to a Minimally Viable Kernel (MVK)**
 
 After completing **Phases 1, 2, and 3**, the GXO project will have a secure, persistent, refactored daemon capable of supervising workloads. The following new phase, **Phase 4 (MVK Enablement)**, is the critical next step. It cherry-picks the absolute essential features from the original roadmap (Phases 4, 6, and 7) needed to satisfy the six-point Automation Kernel definition and provide compelling demos.
