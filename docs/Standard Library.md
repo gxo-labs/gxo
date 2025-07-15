@@ -62,7 +62,7 @@ The GXO Standard Library (GXO-SL) is the foundational "standard library" of the 
 
 ### **1.1. The GXO-AM Framework**
 
-The design of the GXO-SL is governed by the **GXO Automation Model (GXO-AM)**, a layered architecture where each layer provides a specific class of service, building upon the primitives offered by the layer below it. This ensures a logical, consistent, and highly composable system, preventing monolithic modules and promoting maximum code reuse.
+The design of the GXO-SL is governed by the **GXO Automation Model (GXO-AM)**, a layered architecture where each layer provides a specific class of service, building upon the primitives offered by the layer below it. This document provides the complete specification for the GXO Standard Library, which consists of general-purpose modules up to Layer 6. The model itself, however, extends to Layer 7, which is the domain of custom, business-specific modules.This ensures a logical, consistent, and highly composable system, preventing monolithic modules and promoting maximum code reuse.
 
 The GXO-AM is intentionally designed as a conceptual parallel to the **OSI model** for computer networking. Just as the GXO engine itself is architected as an **Automation Kernel** (analogous to an OS microkernel), its module system provides a corresponding layered model for automation services. This structure allows users to operate at the highest level of abstraction for convenience (e.g., the "Application Layer" `http:request` module) or drop down to lower layers for granular control and custom protocol implementation (e.g., the "Connection Layer" `connection:*` modules). This document provides the complete, detailed function and specification of every module within this layered model.
 
@@ -595,11 +595,17 @@ The GXO-AM rests on Layer 0: the **GXO Automation Kernel** itself. This is the `
 *   **Description:** These modules provide convenient, high-level wrappers around the `http:request` module for specific services like Slack, PagerDuty, or sending email via an SMTP gateway. They simplify the process by providing platform-specific parameters (e.g., `channel` for Slack) instead of requiring the user to construct the full API request.
 *   **Supported Lifecycles:** `run_once`
 
-Excellent. I understand completely. The previous document established the *depth* and *style* of the documentation. This appendix will now provide the *breadth*—an exhaustive, high-level outline of the complete GXO Standard Library (GXO-SL), ensuring all capabilities we've discussed are accounted for.
+## Layer 7: Composition / Business Logic Layer
 
-This appendix will serve as the master checklist for module development, organized by the GXO Automation Model (GXO-AM) layers.
+**Analogy:** The "End-User Application" or "Business Process."
+**Purpose:** This layer is not part of the GXO Standard Library but is a critical part of the GXO Automation Model. It is the domain of custom modules built by users to encapsulate a complete, organization-specific business process.
 
-Here is the new appendix for the `GXO-SL.md` document.
+Modules at this layer provide a highly abstract, simple interface for a complex workflow. They are the primary tool for platform engineering teams to create a "paved road" for their internal customers, enabling them to trigger complex automation with a simple, declarative module invocation.
+
+*   **Example Custom Module:** `my-org:onboard-developer`
+    *   **Synopsis:** A single module to perform all steps for onboarding a new developer.
+    *   **Internal Logic:** The module's Go code would orchestrate calls to multiple services (e.g., creating a GitHub account, a Jira user, and AWS IAM credentials), potentially by using lower-level GXO module logic or by directly calling the relevant APIs.
+    *   **User's Playbook:** An engineer would simply use `module: my-org:onboard-developer` with a `username` parameter, abstracting away the entire complex workflow.
 
 ---
 
